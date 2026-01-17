@@ -73,6 +73,13 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // Stranger Things specific colors
+        stranger: {
+          red: "hsl(0 85% 50%)",
+          pink: "hsl(330 80% 55%)",
+          blue: "hsl(200 80% 50%)",
+          dark: "hsl(0 10% 4%)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -80,9 +87,10 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        display: ["Orbitron", "sans-serif"],
+        display: ["Bebas Neue", "sans-serif"],
         sans: ["Inter", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],
+        typewriter: ["Special Elite", "cursive"],
       },
       keyframes: {
         "accordion-down": {
@@ -94,8 +102,8 @@ export default {
           to: { height: "0" },
         },
         "pulse-glow": {
-          "0%, 100%": { boxShadow: "0 0 20px hsla(185, 100%, 50%, 0.3)" },
-          "50%": { boxShadow: "0 0 40px hsla(185, 100%, 50%, 0.6)" },
+          "0%, 100%": { boxShadow: "0 0 20px hsla(0, 85%, 50%, 0.3)" },
+          "50%": { boxShadow: "0 0 50px hsla(0, 85%, 50%, 0.6)" },
         },
         float: {
           "0%, 100%": { transform: "translateY(0)" },
@@ -109,6 +117,45 @@ export default {
           "0%, 100%": { opacity: "0.5" },
           "50%": { opacity: "1" },
         },
+        flicker: {
+          "0%, 100%": { opacity: "1" },
+          "5%": { opacity: "0.8" },
+          "10%": { opacity: "1" },
+          "15%": { opacity: "0.9" },
+          "57%": { opacity: "0.7" },
+          "60%": { opacity: "1" },
+          "82%": { opacity: "0.85" },
+        },
+        "flicker-intense": {
+          "0%, 18%, 22%, 25%, 53%, 57%, 100%": { 
+            opacity: "1",
+            textShadow: "0 0 10px hsl(0 85% 50%), 0 0 30px hsl(0 85% 50% / 0.5), 0 0 60px hsl(0 85% 50% / 0.3)"
+          },
+          "20%, 24%, 55%": { 
+            opacity: "0.6",
+            textShadow: "none"
+          },
+        },
+        glitch: {
+          "0%, 100%": { transform: "translateX(0)" },
+          "20%": { transform: "translateX(-3px)" },
+          "40%": { transform: "translateX(3px)" },
+          "60%": { transform: "translateX(-1px)" },
+          "80%": { transform: "translateX(1px)" },
+        },
+        "portal-swirl": {
+          "0%": { transform: "rotate(0deg) scale(1)" },
+          "50%": { transform: "rotate(180deg) scale(1.05)" },
+          "100%": { transform: "rotate(360deg) scale(1)" },
+        },
+        "upside-down": {
+          "0%, 100%": { filter: "hue-rotate(0deg)" },
+          "50%": { filter: "hue-rotate(180deg)" },
+        },
+        "vine-grow": {
+          "0%": { strokeDashoffset: "1000" },
+          "100%": { strokeDashoffset: "0" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -117,10 +164,17 @@ export default {
         float: "float 3s ease-in-out infinite",
         shimmer: "shimmer 2s linear infinite",
         "glow-pulse": "glow-pulse 2s ease-in-out infinite",
+        flicker: "flicker 4s infinite",
+        "flicker-intense": "flicker-intense 3s infinite",
+        glitch: "glitch 0.5s infinite",
+        "portal-swirl": "portal-swirl 20s linear infinite",
+        "upside-down": "upside-down 10s ease-in-out infinite",
       },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "gradient-conic": "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
+        "stranger-gradient": "linear-gradient(135deg, hsl(0 85% 50%), hsl(330 80% 55%))",
+        "upside-down-gradient": "linear-gradient(180deg, hsl(200 80% 15%), hsl(0 10% 2%))",
       },
     },
   },
