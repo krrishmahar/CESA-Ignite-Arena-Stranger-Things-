@@ -18,7 +18,7 @@ export const CompetitionHeader = () => {
             <h1 className="font-display font-bold text-lg leading-none gradient-text">
               CESA CodeArena
             </h1>
-            <p className="text-xs text-muted-foreground">National Technical Competition</p>
+            <p className="text-xs text-muted-foreground"> Inspired By Stranger Things</p>
           </div>
         </motion.div>
 

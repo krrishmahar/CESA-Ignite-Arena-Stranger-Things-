@@ -91,7 +91,7 @@ export const RulesPage = () => {
         </h1>
         
         <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-          Welcome to the national technical competition. Please read all rules carefully before proceeding.
+          Welcome to the technical competition. Please read all rules carefully before proceeding.
         </p>
       </motion.div>
 
