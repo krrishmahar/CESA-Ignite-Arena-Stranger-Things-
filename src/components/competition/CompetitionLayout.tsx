@@ -1,12 +1,14 @@
 import { useCompetitionStore } from '@/store/competitionStore';
 import { CompetitionHeader } from './CompetitionHeader';
 import { CompetitionTimeline } from './CompetitionTimeline';
+import { GamesDashboard } from './GamesDashboard';
 import { AnimatedBackground } from './AnimatedBackground';
 import { RulesPage } from './RulesPage';
 import { MCQRound } from './MCQRound';
 import { FlowchartRound } from './FlowchartRound';
 import { CodingRound } from './CodingRound';
 import { CompletionPage } from './CompletionPage';
+import { SecurityOverlay } from '@/components/security/SecurityOverlay';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const CompetitionLayout = () => {
@@ -32,19 +34,20 @@ export const CompetitionLayout = () => {
   return (
     <div className="min-h-screen relative">
       <AnimatedBackground />
-      
+      <SecurityOverlay />
+
       <div className="relative z-10 flex flex-col min-h-screen">
         <CompetitionHeader />
-        
+
         <main className="flex-1 container mx-auto px-4 py-6">
-          <div className="grid lg:grid-cols-[280px,1fr] gap-6 h-full">
-            {/* Sidebar - Timeline */}
+          <div className="grid lg:grid-cols-[280px,1fr,300px] gap-6 h-full">
+            {/* Left Sidebar - Timeline */}
             <div className="hidden lg:block">
               <div className="sticky top-24">
                 <CompetitionTimeline />
               </div>
             </div>
-            
+
             {/* Main Content Area */}
             <AnimatePresence mode="wait">
               <motion.div
@@ -58,6 +61,15 @@ export const CompetitionLayout = () => {
                 {renderRound()}
               </motion.div>
             </AnimatePresence>
+
+            {/* Right Sidebar - Games Dashboard (only show during active rounds) */}
+            {currentRound !== 'rules' && currentRound !== 'completed' && (
+              <div className="hidden lg:block">
+                <div className="sticky top-24">
+                  <GamesDashboard />
+                </div>
+              </div>
+            )}
           </div>
         </main>
       </div>

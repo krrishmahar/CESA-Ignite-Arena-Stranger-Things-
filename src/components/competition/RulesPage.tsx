@@ -8,53 +8,53 @@ import { useCompetitionStore } from '@/store/competitionStore';
 const rules = [
   {
     icon: Shield,
-    title: 'Fair Play Required',
-    description: 'Any form of cheating, including using AI tools, external resources, or communicating with others will result in immediate disqualification.',
+    title: 'Protocol Compliance',
+    description: 'Any breach of security protocols, including unauthorized resource access, AI assistance, or external communication will trigger immediate system lockout and disqualification.',
   },
   {
     icon: Clock,
-    title: 'Time Limits',
-    description: 'Each round has a strict time limit. The timer starts when you enter a round and cannot be paused or reset.',
+    title: 'Time Constraints',
+    description: 'Each containment round has a critical time window. The countdown begins upon entry and cannot be paused. Gate stability decreases over time.',
   },
   {
     icon: AlertTriangle,
-    title: 'No Tab Switching',
-    description: 'Switching tabs or minimizing the browser window is monitored. Excessive tab switches (3+) may result in disqualification.',
+    title: 'Surveillance Active',
+    description: 'All activity is monitored. Tab switching, window minimization, and focus changes are logged. 3 violations result in automatic disqualification.',
   },
   {
     icon: Code,
-    title: 'Code Execution',
-    description: 'Your code will be executed in a secure sandbox. Resource limits (CPU, memory) are enforced strictly.',
+    title: 'Sandboxed Execution',
+    description: 'All code runs in an isolated containment environment. CPU and memory limits are enforced. Infinite loops or resource abuse will terminate execution.',
   },
   {
     icon: GitBranch,
-    title: 'Sequential Rounds',
-    description: 'You must complete each round in order. The next round only unlocks after successfully completing the current one.',
+    title: 'Sequential Unlock',
+    description: 'Gate sealing requires completing all protocols in sequence. Round II unlocks only after Round I success. No skipping allowed.',
   },
   {
     icon: Trophy,
-    title: 'Scoring',
-    description: 'Points are based on correctness and time. Faster correct submissions earn bonus points. Partial credit may be awarded.',
+    title: 'Performance Metrics',
+    description: 'Scoring factors: correctness (60%), time efficiency (25%), code quality (15%). Faster solutions earn exponential bonus points.',
   },
 ];
 
 const roundInfo = [
   {
-    round: 'Round 1: Aptitude MCQ',
+    round: 'Round I: Aptitude Assessment',
     duration: '30 minutes',
-    description: 'Test your logical reasoning and technical aptitude',
+    description: 'Logic puzzles and scenario-based reasoning under pressure',
     color: 'primary',
   },
   {
-    round: 'Round 2: Flowchart Design',
+    round: 'Round II: Flowchart Design',
     duration: '45 minutes',
-    description: 'Design flowcharts to solve algorithmic problems',
+    description: 'Map algorithmic pathways to contain the breach',
     color: 'secondary',
   },
   {
-    round: 'Round 3: DSA Coding',
+    round: 'Round III: DSA Implementation',
     duration: '60 minutes',
-    description: 'Implement solutions in your preferred language',
+    description: 'Code the solution that seals the gate forever',
     color: 'accent',
   },
 ];
@@ -81,17 +81,18 @@ export const RulesPage = () => {
         animate={{ y: 0, opacity: 1 }}
         className="text-center space-y-4"
       >
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/30 text-primary text-sm">
-          <Zap className="w-4 h-4" />
-          <span>Competition Rules</span>
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-destructive/10 border border-destructive/30 text-destructive text-sm animate-pulse">
+          <Shield className="w-4 h-4" />
+          <span>SECURITY PROTOCOL BRIEFING</span>
         </div>
-        
+
         <h1 className="font-display text-4xl md:text-5xl font-bold">
-          <span className="gradient-text">CESA CodeArena</span>
+          <span className="gradient-text">THE GATEKEEPER'S PROTOCOL</span>
         </h1>
-        
-        <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-          Welcome to the technical competition. Please read all rules carefully before proceeding.
+
+        <p className="text-red-200/80 text-lg max-w-2xl mx-auto">
+          Before entering the containment zone, all operatives must acknowledge and accept the security protocols.
+          The gate will not stabilize without your compliance.
         </p>
       </motion.div>
 

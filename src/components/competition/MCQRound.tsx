@@ -14,36 +14,54 @@ interface Question {
   multiCorrect: boolean;
 }
 
-// Sample questions - in production, fetch from backend
+// Story-based logic questions for Gatekeeper Protocol
 const sampleQuestions: Question[] = [
   {
     id: 'q1',
-    question: 'What is the time complexity of binary search in a sorted array?',
-    options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'],
+    question: 'SCENARIO: Three backup generators power the lab perimeter. Generator A restarts every 12 minutes, Generator B every 18 minutes, and Generator C every 24 minutes. If all three generators restart simultaneously at 6:00 PM, when will they next restart together?',
+    options: ['6:36 PM', '6:48 PM', '7:12 PM', '7:24 PM'],
     multiCorrect: false,
   },
   {
     id: 'q2',
-    question: 'Which data structure uses LIFO (Last In, First Out) principle?',
-    options: ['Queue', 'Stack', 'Linked List', 'Tree'],
+    question: 'SCENARIO: The gate monitoring system processes 240 data points per second. If each analysis cycle requires exactly 16 data points, how many complete analysis cycles can be performed in 5 seconds?',
+    options: ['60 cycles', '75 cycles', '80 cycles', '90 cycles'],
     multiCorrect: false,
   },
   {
     id: 'q3',
-    question: 'Which of the following are valid sorting algorithms? (Select all that apply)',
-    options: ['Bubble Sort', 'Hash Sort', 'Merge Sort', 'Quick Sort'],
-    multiCorrect: true,
+    question: 'LOGIC: A security protocol requires a 6-digit code where each digit is the sum of the previous two digits (starting with 1 and 1). What is the 6th digit?',
+    options: ['8', '13', '21', '34'],
+    multiCorrect: false,
   },
   {
     id: 'q4',
-    question: 'What is the worst-case time complexity of QuickSort?',
-    options: ['O(n log n)', 'O(n²)', 'O(n)', 'O(log n)'],
+    question: 'SCENARIO: The dimensional scanner emits three frequency signals: Signal X every 8 seconds, Signal Y every 12 seconds, and Signal Z every 20 seconds. All signals emit simultaneously at time 0. After how many seconds will all three signals emit together again?',
+    options: ['60 seconds', '80 seconds', '120 seconds', '240 seconds'],
     multiCorrect: false,
   },
   {
     id: 'q5',
-    question: 'Which data structure is used for implementing recursion?',
-    options: ['Queue', 'Stack', 'Array', 'Linked List'],
+    question: 'PATTERN RECOGNITION: The lab energy readings show this sequence: 2, 6, 12, 20, 30, __. What number comes next?',
+    options: ['40', '42', '44', '48'],
+    multiCorrect: false,
+  },
+  {
+    id: 'q6',
+    question: 'CRITICAL THINKING: If it takes 5 scientists 5 hours to analyze 5 specimens, how many hours will it take 100 scientists to analyze 100 specimens?',
+    options: ['5 hours', '20 hours', '100 hours', '500 hours'],
+    multiCorrect: false,
+  },
+  {
+    id: 'q7',
+    question: 'SCENARIO: The gate containment field requires power from two independent sources. Source A provides power for 45 minutes before requiring a 15-minute cooldown. Source B provides power for 30 minutes before requiring a 10-minute cooldown. If both start simultaneously, what is the first time interval where NEITHER source is providing power?',
+    options: ['60-70 minutes', '70-75 minutes', 'Never occurs', '80-85 minutes'],
+    multiCorrect: false,
+  },
+  {
+    id: 'q8',
+    question: 'LOGICAL DEDUCTION: Three lab technicians (Alex, Blake, Casey) are stationed at checkpoints. Alex is not at Checkpoint 1. Blake is at Checkpoint 3. Casey is not at Checkpoint 2. Where is Alex stationed?',
+    options: ['Checkpoint 1', 'Checkpoint 2', 'Checkpoint 3', 'Cannot be determined'],
     multiCorrect: false,
   },
 ];

@@ -18,79 +18,68 @@ const languages = [
 ];
 
 const defaultCode: Record<string, string> = {
-  python: `def solution(nums, target):
+  python: `def firstNonRepeatingChar(s):
     """
-    Find two numbers that add up to target.
-    Return their indices as a list.
+    Find the first non-repeating character in a string.
+    Return the character. If none exists, return '_'.
+
+    MISSION: Decode the signal pattern to unlock the gate.
     """
     # Your code here
     pass
 
 # DO NOT MODIFY BELOW THIS LINE
 if __name__ == "__main__":
-    import sys
-    nums = list(map(int, input().split()))
-    target = int(input())
-    result = solution(nums, target)
+    s = input().strip()
+    result = firstNonRepeatingChar(s)
     print(result)
 `,
   cpp: `#include <iostream>
-#include <vector>
+#include <string>
 using namespace std;
 
 class Solution {
 public:
-    vector<int> twoSum(vector<int>& nums, int target) {
+    char firstNonRepeatingChar(string s) {
         // Your code here
-        return {};
+        // Return '_' if no non-repeating character exists
+        return '_';
     }
 };
 
 // DO NOT MODIFY BELOW THIS LINE
 int main() {
     Solution sol;
-    vector<int> nums;
-    int n, target;
-    cin >> n;
-    for(int i = 0; i < n; i++) {
-        int x; cin >> x;
-        nums.push_back(x);
-    }
-    cin >> target;
-    auto result = sol.twoSum(nums, target);
-    cout << "[" << result[0] << ", " << result[1] << "]" << endl;
+    string s;
+    getline(cin, s);
+    cout << sol.firstNonRepeatingChar(s) << endl;
     return 0;
 }
 `,
   c: `#include <stdio.h>
-#include <stdlib.h>
+#include <string.h>
 
-int* twoSum(int* nums, int numsSize, int target, int* returnSize) {
+char firstNonRepeatingChar(char* s) {
     // Your code here
-    *returnSize = 2;
-    int* result = (int*)malloc(2 * sizeof(int));
-    return result;
+    // Return '_' if no non-repeating character exists
+    return '_';
 }
 
 // DO NOT MODIFY BELOW THIS LINE
 int main() {
-    int n, target;
-    scanf("%d", &n);
-    int nums[n];
-    for(int i = 0; i < n; i++) scanf("%d", &nums[i]);
-    scanf("%d", &target);
-    int returnSize;
-    int* result = twoSum(nums, n, target, &returnSize);
-    printf("[%d, %d]\\n", result[0], result[1]);
+    char s[100001];
+    scanf("%s", s);
+    printf("%c\\n", firstNonRepeatingChar(s));
     return 0;
 }
 `,
   java: `import java.util.*;
 
 class Solution {
-    public int[] twoSum(int[] nums, int target) {
+    public char firstNonRepeatingChar(String s) {
         // Your code here
-        return new int[]{};
+        // Return '_' if no non-repeating character exists
+        return '_';
     }
 }
 
@@ -98,43 +87,46 @@ class Solution {
 public class Main {
     public static void main(String[] args) {
         Scanner sc = new Scanner(System.in);
-        int n = sc.nextInt();
-        int[] nums = new int[n];
-        for(int i = 0; i < n; i++) nums[i] = sc.nextInt();
-        int target = sc.nextInt();
+        String s = sc.nextLine();
         Solution sol = new Solution();
-        int[] result = sol.twoSum(nums, target);
-        System.out.println("[" + result[0] + ", " + result[1] + "]");
+        System.out.println(sol.firstNonRepeatingChar(s));
     }
 }
 `,
 };
 
 const problemStatement = {
-  title: 'Two Sum',
+  title: 'Gate Signal Decoder',
   difficulty: 'Medium',
-  description: `Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.
+  description: `MISSION CRITICAL: The gate's locking mechanism requires a unique signal pattern.
 
-You may assume that each input would have exactly one solution, and you may not use the same element twice.
+Given a string representing the signal transmission, find the FIRST character that appears exactly once. This character is the key to stabilizing the gate.
 
-You can return the answer in any order.`,
+If no such character exists, the gate cannot be sealed. Return '_' to indicate failure.
+
+Your solution must be efficient - the gate is collapsing and time is running out.`,
   examples: [
     {
-      input: 'nums = [2,7,11,15], target = 9',
-      output: '[0,1]',
-      explanation: 'Because nums[0] + nums[1] == 9, we return [0, 1].',
+      input: 's = "hawkins"',
+      output: 'h',
+      explanation: "'h' is the first character that appears only once in the signal.",
     },
     {
-      input: 'nums = [3,2,4], target = 6',
-      output: '[1,2]',
-      explanation: 'Because nums[1] + nums[2] == 6, we return [1, 2].',
+      input: 's = "laboratory"',
+      output: 'l',
+      explanation: "'l' appears first and only once. Other characters repeat.",
+    },
+    {
+      input: 's = "aabbcc"',
+      output: '_',
+      explanation: 'All characters repeat. Gate cannot be sealed.',
     },
   ],
   constraints: [
-    '2 <= nums.length <= 10^4',
-    '-10^9 <= nums[i] <= 10^9',
-    '-10^9 <= target <= 10^9',
-    'Only one valid answer exists.',
+    '1 <= s.length <= 10^5',
+    's consists of lowercase English letters only',
+    'Time limit: 1 second',
+    'Memory limit: 256 MB',
   ],
 };
 

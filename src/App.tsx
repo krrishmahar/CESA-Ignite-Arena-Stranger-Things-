@@ -6,7 +6,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom"
 
 import AdminPanel from "./pages/AdminPanel"
 import NotFound from "./pages/NotFound"
-import StrangerHero from "./components/StrangerHero"
+import LandingPage from "./components/landing/LandingPage"
+import { CompetitionLayout } from "./components/competition/CompetitionLayout"
 
 
 const queryClient = new QueryClient()
@@ -20,15 +21,11 @@ export default function App() {
 
         <BrowserRouter>
           <Routes>
-            {/* HOMEPAGE */}
-            <Route
-              path="/"
-              element={
-                <main className="bg-black text-white overflow-hidden">
-                  <StrangerHero />
-                </main>
-              }
-            />
+            {/* LANDING PAGE */}
+            <Route path="/" element={<LandingPage />} />
+
+            {/* COMPETITION INTERFACE */}
+            <Route path="/competition" element={<CompetitionLayout />} />
 
             {/* ADMIN */}
             <Route path="/admin" element={<AdminPanel />} />
