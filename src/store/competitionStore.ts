@@ -1,199 +1,180 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { supabase } from '@/lib/supabaseClient';
 
+// --- TYPES ---
 export type RoundStatus = 'locked' | 'active' | 'completed';
-export type Round = 'rules' | 'mcq' | 'flowchart' | 'coding' | 'completed';
-
-interface MCQAnswer {
-  questionId: string;
-  selectedOptions: number[];
-  timeSpent: number;
-}
-
-interface FlowchartData {
-  nodes: any[];
-  edges: any[];
-  submittedAt?: Date;
-}
-
-interface CodeSubmission {
-  language: string;
-  code: string;
-  submittedAt: Date;
-  verdict?: 'pending' | 'accepted' | 'wrong_answer' | 'tle' | 'compilation_error';
-}
+export type Round = 'rules' | 'waiting' | 'mcq' | 'flowchart' | 'coding' | 'completed'; // Added 'waiting'
+export type CompetitionStatus = 'active' | 'frozen' | 'disqualified';
 
 interface CompetitionState {
-  isDisqualified: boolean;
-
-  // User Info
-  participantId: string | null;
-  participantName: string | null;
-  
-  // Current State
+  // Local UI State
+  competitionStatus: CompetitionStatus;
   currentRound: Round;
-  
-  // Round Status
   roundStatus: Record<Round, RoundStatus>;
   
-  // MCQ State
-  mcqAnswers: MCQAnswer[];
-  mcqStartTime: number | null;
-  mcqTimeRemaining: number;
+  // User Data
+  userId: string | null;
+  email: string | null;
+  
+  // Security
   tabSwitchCount: number;
   
-  // Flowchart State
-  flowchartData: FlowchartData | null;
-  flowchartStartTime: number | null;
+  // --- ACTIONS ---
+  initializeUser: (userId: string, email: string) => Promise<void>;
+  acceptRules: () => Promise<void>;
+  startRound1: () => void; // Call this from Admin or Timer
   
-  // Coding State
-  codeSubmissions: CodeSubmission[];
-  codingStartTime: number | null;
-  currentCode: string;
-  currentLanguage: string;
-  
-  // Actions
-  setParticipant: (id: string, name: string) => void;
-  setCurrentRound: (round: Round) => void;
-  completeRound: (round: Round) => void;
-  
-  // MCQ Actions
-  setMCQAnswer: (answer: MCQAnswer) => void;
-  startMCQ: () => void;
-  decrementMCQTime: () => void;
-  incrementTabSwitch: () => void;
-  disqualify: () => void;
-  
-
-  
-  // Flowchart Actions
-  saveFlowchart: (data: FlowchartData) => void;
-  startFlowchart: () => void;
-  
-  // Coding Actions
-  setCurrentCode: (code: string) => void;
-  setCurrentLanguage: (lang: string) => void;
-  submitCode: (submission: CodeSubmission) => void;
-  startCoding: () => void;
+  // Security Actions
+  logTabSwitch: () => Promise<void>;
+  freezeCompetition: () => Promise<void>;
+  unfreezeCompetition: () => void;
+  disqualifyUser: () => Promise<void>;
   
   // Reset
   resetCompetition: () => void;
 }
 
 const initialState = {
-  isDisqualified: false,
-  participantId: null,
-  participantName: null,
+  competitionStatus: 'active' as CompetitionStatus,
   currentRound: 'rules' as Round,
   roundStatus: {
-    rules: 'active' as RoundStatus,
-    mcq: 'locked' as RoundStatus,
-    flowchart: 'locked' as RoundStatus,
-    coding: 'locked' as RoundStatus,
-    completed: 'locked' as RoundStatus,
-  },
-  mcqAnswers: [],
-  mcqStartTime: null,
-  mcqTimeRemaining: 30 * 60, // 30 minutes
+    rules: 'active',
+    waiting: 'locked',
+    mcq: 'locked',
+    flowchart: 'locked',
+    coding: 'locked',
+    completed: 'locked',
+  } as Record<Round, RoundStatus>,
   tabSwitchCount: 0,
-  flowchartData: null,
-  flowchartStartTime: null,
-  codeSubmissions: [],
-  codingStartTime: null,
-  currentCode: '',
-  currentLanguage: 'python',
+  userId: null,
+  email: null,
 };
 
 export const useCompetitionStore = create<CompetitionState>()(
   persist(
     (set, get) => ({
       ...initialState,
-      
-      setParticipant: (id, name) => set({ participantId: id, participantName: name }),
-      
-      setCurrentRound: (round) => set({ currentRound: round }),
-      
-      completeRound: (round) => {
-        const { roundStatus } = get();
-        const newStatus = { ...roundStatus };
-        newStatus[round] = 'completed';
+
+// 1. LOGIN & INIT SESSION
+      initializeUser: async (userId, email) => {
+        set({ userId, email });
         
-        // Unlock next round
-        const roundOrder: Round[] = ['rules', 'mcq', 'flowchart', 'coding', 'completed'];
-        const currentIndex = roundOrder.indexOf(round);
-        if (currentIndex < roundOrder.length - 1) {
-          newStatus[roundOrder[currentIndex + 1]] = 'active';
+        // Check if session exists in DB
+        const { data } = await supabase
+          .from('exam_sessions')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (data) {
+          // Restore state from DB
+          set({ 
+            competitionStatus: data.status === 'active' ? 'active' : data.status,
+            tabSwitchCount: data.tab_switches || 0
+            // Add more restoration logic here if needed
+          });
+        } else {
+          // Create new session
+          await supabase.from('exam_sessions').insert({
+            user_id: userId,
+            email: email, // Make sure column exists or remove this
+            status: 'active',
+            current_round_slug: 'rules'
+          });
         }
-        
-        set({
-          roundStatus: newStatus,
-          currentRound: currentIndex < roundOrder.length - 1 ? roundOrder[currentIndex + 1] : 'completed',
+      },
+
+      // 2. RULES ACCEPTED -> GO TO WAITING ROOM
+      acceptRules: async () => {
+        const { userId } = get();
+        set({ 
+          currentRound: 'waiting',
+          roundStatus: { ...get().roundStatus, rules: 'completed', waiting: 'active' }
+        });
+
+        // Log to DB
+        if (userId) {
+          await supabase.from('exam_sessions')
+            .update({ current_round_slug: 'waiting' })
+            .eq('user_id', userId);
+            
+          await supabase.from('activity_logs').insert({
+            user_id: userId,
+            action_type: 'RULES_ACCEPTED',
+            details: { timestamp: new Date().toISOString() }
+          });
+        }
+      },
+
+      // 3. ADMIN STARTS EXAM (Waiting -> MCQ)
+      startRound1: () => {
+        set({ 
+          currentRound: 'mcq',
+          roundStatus: { ...get().roundStatus, waiting: 'completed', mcq: 'active' }
         });
       },
-      
-      // MCQ Actions
-      setMCQAnswer: (answer) => set((state) => ({
-        mcqAnswers: [
-          ...state.mcqAnswers.filter(a => a.questionId !== answer.questionId),
-          answer
-        ]
-      })),
-      
-      startMCQ: () => set({ mcqStartTime: Date.now() }),
-      
-      decrementMCQTime: () => set((state) => ({
-        mcqTimeRemaining: Math.max(0, state.mcqTimeRemaining - 1)
-      })),
-      
-      /*incrementTabSwitch: () => set((state) => ({
-      tabSwitchCount: state.tabSwitchCount + 1
-      })),*/
 
-      //ayush code below, ek switch pe disqualify
-   incrementTabSwitch: () =>
-  set((state) => ({
-    tabSwitchCount: state.tabSwitchCount + 1,
-  })),
+      // 4. SECURITY: TAB SWITCH LOGGING
+      logTabSwitch: async () => {
+        const { tabSwitchCount, userId, competitionStatus } = get();
+        const newCount = tabSwitchCount + 1;
+        
+        set({ tabSwitchCount: newCount });
 
-disqualify: () =>
-  set((state) => ({
-    isDisqualified: true,
-    currentRound: 'completed',
-    roundStatus: {
-      ...state.roundStatus,
-      mcq: 'completed',
-      flowchart: 'completed',
-      coding: 'completed',
-      completed: 'active',
-    },
-  })),
+        // Local Freeze Logic
+        if (newCount >= 2 && competitionStatus !== 'disqualified') {
+           set({ competitionStatus: 'frozen' });
+        }
 
+        // DB Log
+        if (userId) {
+          await supabase.from('activity_logs').insert({
+            user_id: userId,
+            action_type: 'TAB_SWITCH',
+            severity: 'warning',
+            details: { count: newCount, timestamp: new Date().toISOString() }
+          });
+          
+          // Update Session Stats
+          await supabase.from('exam_sessions')
+            .update({ 
+                tab_switches: newCount,
+                status: newCount >= 2 ? 'frozen' : 'active' 
+            })
+            .eq('user_id', userId);
+        }
+      },
 
+      freezeCompetition: async () => {
+        set({ competitionStatus: 'frozen' });
+        const { userId } = get();
+        if (userId) {
+            await supabase.from('exam_sessions').update({ status: 'frozen' }).eq('user_id', userId);
+        }
+      },
 
+      unfreezeCompetition: () => {
+        set({ competitionStatus: 'active' });
+        // Optional: DB update logic if Admin triggers this
+      },
 
+      disqualifyUser: async () => {
+        set({ competitionStatus: 'disqualified', currentRound: 'completed' });
+        const { userId } = get();
+        if (userId) {
+            await supabase.from('exam_sessions').update({ status: 'disqualified', is_disqualified: true }).eq('user_id', userId);
+            await supabase.from('activity_logs').insert({
+                user_id: userId,
+                action_type: 'DISQUALIFIED',
+                severity: 'critical',
+                details: { reason: 'Cheat Detection' }
+            });
+        }
+      },
 
-
-      
-      // Flowchart Actions
-      saveFlowchart: (data) => set({ flowchartData: data }),
-      
-      startFlowchart: () => set({ flowchartStartTime: Date.now() }),
-      
-      // Coding Actions
-      setCurrentCode: (code) => set({ currentCode: code }),
-      
-      setCurrentLanguage: (lang) => set({ currentLanguage: lang }),
-      
-      submitCode: (submission) => set((state) => ({
-        codeSubmissions: [...state.codeSubmissions, submission]
-      })),
-      
-      startCoding: () => set({ codingStartTime: Date.now() }),
-      
       resetCompetition: () => set(initialState),
     }),
-    {
-      name: 'cesa-competition-storage',
-    }
+    { name: 'cesa-competition-storage' }
   )
 );

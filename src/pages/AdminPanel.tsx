@@ -1,359 +1,169 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient'; // Ensure path is correct
 import { 
-  Users, Trophy, FileText, Code, GitBranch, AlertTriangle, 
-  Download, Lock, Unlock, Ban, Eye, ChevronRight, Search,
-  BarChart3, Clock, Shield
+  Users, Lock, Unlock, Ban, Search, Shield, RefreshCw, Eye
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AnimatedBackground } from '@/components/competition/AnimatedBackground';
 import { cn } from '@/lib/utils';
+import { AnimatedBackground } from '../components/competition/AnimatedBackground'; 
 
-// Mock data for demonstration
-const mockParticipants = [
-  { id: 'P001', name: 'Rahul Sharma', email: 'rahul@example.com', currentRound: 'coding', score: 185, status: 'active', tabSwitches: 1 },
-  { id: 'P002', name: 'Priya Patel', email: 'priya@example.com', currentRound: 'flowchart', score: 120, status: 'active', tabSwitches: 0 },
-  { id: 'P003', name: 'Amit Kumar', email: 'amit@example.com', currentRound: 'mcq', score: 45, status: 'active', tabSwitches: 2 },
-  { id: 'P004', name: 'Sneha Reddy', email: 'sneha@example.com', currentRound: 'completed', score: 245, status: 'completed', tabSwitches: 0 },
-  { id: 'P005', name: 'Vikram Singh', email: 'vikram@example.com', currentRound: 'mcq', score: 0, status: 'disqualified', tabSwitches: 5 },
-];
-
-const mockLeaderboard = [
-  { rank: 1, name: 'Sneha Reddy', score: 245, time: '1:42:30' },
-  { rank: 2, name: 'Rahul Sharma', score: 185, time: '1:15:00' },
-  { rank: 3, name: 'Priya Patel', score: 120, time: '0:45:00' },
-  { rank: 4, name: 'Amit Kumar', score: 45, time: '0:20:00' },
-];
-
-const mockCheatingLogs = [
-  { id: 1, participantId: 'P005', type: 'tab_switch', count: 5, timestamp: '2024-01-15 14:32:15', action: 'Disqualified' },
-  { id: 2, participantId: 'P003', type: 'tab_switch', count: 2, timestamp: '2024-01-15 14:28:00', action: 'Warning Issued' },
-  { id: 3, participantId: 'P001', type: 'copy_attempt', count: 1, timestamp: '2024-01-15 14:25:30', action: 'Logged' },
-];
+// Types for DB Data
+interface Participant {
+  user_id: string;
+  email: string; // Ensure your exam_sessions table has email, or fetch from auth
+  status: 'active' | 'frozen' | 'disqualified';
+  current_round_slug: string;
+  tab_switches: number;
+}
 
 const AdminPanel = () => {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const stats = [
-    { label: 'Total Participants', value: 127, icon: Users, color: 'primary' },
-    { label: 'Currently Active', value: 98, icon: Clock, color: 'success' },
-    { label: 'Completed', value: 24, icon: Trophy, color: 'warning' },
-    { label: 'Flagged/DQ', value: 5, icon: AlertTriangle, color: 'destructive' },
-  ];
+  // 1. FETCH DATA FROM SUPABASE
+  const fetchParticipants = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('exam_sessions')
+      .select('*')
+      .order('started_at', { ascending: false });
+
+    if (error) console.error("Error fetching users:", error);
+    else setParticipants(data || []);
+    setLoading(false);
+  };
+
+  // 2. REALTIME SUBSCRIPTION
+  useEffect(() => {
+    fetchParticipants();
+
+    const channel = supabase
+      .channel('admin-dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_sessions' }, (payload) => {
+        console.log('Realtime update:', payload);
+        fetchParticipants(); // Refresh list on any change
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  // 3. ADMIN ACTIONS
+  const handleAction = async (action: 'freeze' | 'unfreeze' | 'dq', userId: string) => {
+    let updates = {};
+    if (action === 'freeze') updates = { status: 'frozen' };
+    if (action === 'unfreeze') updates = { status: 'active' };
+    if (action === 'dq') updates = { status: 'disqualified', is_disqualified: true };
+
+    const { error } = await supabase
+        .from('exam_sessions')
+        .update(updates)
+        .eq('user_id', userId);
+
+    if (error) alert("Action failed: " + error.message);
+  };
+
+  const filteredUsers = participants.filter(p => 
+     p.email?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+     p.user_id.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="min-h-screen relative">
+    <div className="min-h-screen relative font-sans text-slate-900 dark:text-slate-50">
       <AnimatedBackground />
       
-      <div className="relative z-10">
-        {/* Admin Header */}
-        <header className="glass-strong border-b border-border/50 sticky top-0 z-50">
-          <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-destructive to-warning flex items-center justify-center">
-                <Shield className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="font-display font-bold text-lg leading-none">
-                  Admin Panel
-                </h1>
-                <p className="text-xs text-muted-foreground">CESA CodeArena Control</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                <span className="text-muted-foreground">Competition Active</span>
-              </div>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Download className="w-4 h-4" />
-                Export Results
-              </Button>
-            </div>
-          </div>
+      <div className="relative z-10 container mx-auto px-4 py-8 space-y-8">
+        {/* Header */}
+        <header className="flex justify-between items-center bg-black/50 p-6 rounded-xl border border-white/10 backdrop-blur-md">
+            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                <Shield className="text-indigo-500" /> Admin Command Center
+            </h1>
+            <Button onClick={fetchParticipants} variant="outline" size="sm">
+                <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+            </Button>
         </header>
 
-        <main className="container mx-auto px-4 py-6 space-y-6">
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {stats.map((stat, index) => (
-              <motion.div
-                key={stat.label}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="glass-strong rounded-xl p-4"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <stat.icon className={cn(
-                    "w-5 h-5",
-                    stat.color === 'primary' && "text-primary",
-                    stat.color === 'success' && "text-success",
-                    stat.color === 'warning' && "text-warning",
-                    stat.color === 'destructive' && "text-destructive",
-                  )} />
-                  <span className={cn(
-                    "text-2xl font-display font-bold",
-                    stat.color === 'primary' && "text-primary",
-                    stat.color === 'success' && "text-success",
-                    stat.color === 'warning' && "text-warning",
-                    stat.color === 'destructive' && "text-destructive",
-                  )}>
-                    {stat.value}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">{stat.label}</p>
-              </motion.div>
-            ))}
-          </div>
-
-          {/* Main Content Tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="glass-strong p-1">
-              <TabsTrigger value="overview" className="gap-2">
-                <BarChart3 className="w-4 h-4" />
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="participants" className="gap-2">
-                <Users className="w-4 h-4" />
-                Participants
-              </TabsTrigger>
-              <TabsTrigger value="leaderboard" className="gap-2">
-                <Trophy className="w-4 h-4" />
-                Leaderboard
-              </TabsTrigger>
-              <TabsTrigger value="submissions" className="gap-2">
-                <Code className="w-4 h-4" />
-                Submissions
-              </TabsTrigger>
-              <TabsTrigger value="security" className="gap-2">
-                <AlertTriangle className="w-4 h-4" />
-                Security Logs
-              </TabsTrigger>
-            </TabsList>
-
-            {/* Overview Tab */}
-            <TabsContent value="overview" className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                {/* Round Progress */}
-                <div className="glass-strong rounded-xl p-6">
-                  <h3 className="font-display font-bold mb-4">Round Progress</h3>
-                  <div className="space-y-4">
-                    {['MCQ Round', 'Flowchart', 'Coding'].map((round, i) => (
-                      <div key={round} className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>{round}</span>
-                          <span className="text-muted-foreground">{40 - i * 10}%</span>
-                        </div>
-                        <div className="h-2 bg-muted rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-gradient-to-r from-primary to-secondary rounded-full"
-                            style={{ width: `${40 - i * 10}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Quick Actions */}
-                <div className="glass-strong rounded-xl p-6">
-                  <h3 className="font-display font-bold mb-4">Quick Actions</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button variant="outline" className="gap-2 h-auto py-3 flex-col">
-                      <Lock className="w-5 h-5" />
-                      <span className="text-xs">Lock All Rounds</span>
-                    </Button>
-                    <Button variant="outline" className="gap-2 h-auto py-3 flex-col">
-                      <Unlock className="w-5 h-5" />
-                      <span className="text-xs">Unlock Round</span>
-                    </Button>
-                    <Button variant="outline" className="gap-2 h-auto py-3 flex-col text-destructive border-destructive/50">
-                      <Ban className="w-5 h-5" />
-                      <span className="text-xs">DQ User</span>
-                    </Button>
-                    <Button variant="outline" className="gap-2 h-auto py-3 flex-col">
-                      <Download className="w-5 h-5" />
-                      <span className="text-xs">Export Data</span>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-
-            {/* Participants Tab */}
-            <TabsContent value="participants" className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search participants..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 bg-card"
-                  />
-                </div>
-              </div>
-              
-              <div className="glass-strong rounded-xl overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-muted/50">
-                    <tr className="text-left text-xs text-muted-foreground">
-                      <th className="p-4">ID</th>
-                      <th className="p-4">Name</th>
-                      <th className="p-4">Current Round</th>
-                      <th className="p-4">Score</th>
-                      <th className="p-4">Tab Switches</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mockParticipants.map((p) => (
-                      <tr key={p.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                        <td className="p-4 font-mono text-sm">{p.id}</td>
-                        <td className="p-4">
-                          <div>
-                            <div className="font-medium text-sm">{p.name}</div>
-                            <div className="text-xs text-muted-foreground">{p.email}</div>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <span className="px-2 py-1 rounded text-xs bg-primary/10 text-primary capitalize">
-                            {p.currentRound}
-                          </span>
-                        </td>
-                        <td className="p-4 font-mono font-bold text-primary">{p.score}</td>
-                        <td className="p-4">
-                          <span className={cn(
-                            "font-mono",
-                            p.tabSwitches >= 3 && "text-destructive",
-                            p.tabSwitches > 0 && p.tabSwitches < 3 && "text-warning",
-                          )}>
-                            {p.tabSwitches}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span className={cn(
-                            "px-2 py-1 rounded text-xs",
-                            p.status === 'active' && "bg-success/20 text-success",
-                            p.status === 'completed' && "bg-primary/20 text-primary",
-                            p.status === 'disqualified' && "bg-destructive/20 text-destructive",
-                          )}>
-                            {p.status}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive">
-                              <Ban className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </TabsContent>
-
-            {/* Leaderboard Tab */}
-            <TabsContent value="leaderboard" className="space-y-4">
-              <div className="glass-strong rounded-xl overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-muted/50">
-                    <tr className="text-left text-xs text-muted-foreground">
-                      <th className="p-4">Rank</th>
-                      <th className="p-4">Participant</th>
-                      <th className="p-4">Score</th>
-                      <th className="p-4">Time Taken</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mockLeaderboard.map((entry) => (
-                      <tr key={entry.rank} className="border-t border-border hover:bg-muted/30 transition-colors">
-                        <td className="p-4">
-                          <span className={cn(
-                            "w-8 h-8 rounded-full inline-flex items-center justify-center font-display font-bold",
-                            entry.rank === 1 && "bg-warning/20 text-warning",
-                            entry.rank === 2 && "bg-muted text-muted-foreground",
-                            entry.rank === 3 && "bg-orange-500/20 text-orange-500",
-                            entry.rank > 3 && "bg-muted/50 text-muted-foreground",
-                          )}>
-                            {entry.rank}
-                          </span>
-                        </td>
-                        <td className="p-4 font-medium">{entry.name}</td>
-                        <td className="p-4 font-mono font-bold text-primary">{entry.score}</td>
-                        <td className="p-4 font-mono text-muted-foreground">{entry.time}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </TabsContent>
-
-            {/* Submissions Tab */}
-            <TabsContent value="submissions" className="space-y-4">
-              <div className="glass-strong rounded-xl p-8 text-center">
-                <Code className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="font-display font-bold text-lg mb-2">Code Submissions</h3>
-                <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                  View all code submissions, flowcharts, and MCQ answers from participants.
-                  Click on a participant to view their detailed submissions.
+        {/* Stats Row */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+             <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-xl text-white">
+                <p className="text-xs uppercase text-slate-500 font-bold">Total Users</p>
+                <p className="text-3xl font-bold">{participants.length}</p>
+             </div>
+             <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-xl text-white">
+                <p className="text-xs uppercase text-orange-500 font-bold">Frozen</p>
+                <p className="text-3xl font-bold text-orange-400">
+                    {participants.filter(p => p.status === 'frozen').length}
                 </p>
-              </div>
-            </TabsContent>
+             </div>
+        </div>
 
-            {/* Security Logs Tab */}
-            <TabsContent value="security" className="space-y-4">
-              <div className="glass-strong rounded-xl overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-muted/50">
-                    <tr className="text-left text-xs text-muted-foreground">
-                      <th className="p-4">Timestamp</th>
-                      <th className="p-4">Participant</th>
-                      <th className="p-4">Type</th>
-                      <th className="p-4">Count</th>
-                      <th className="p-4">Action Taken</th>
+        {/* Search */}
+        <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4" />
+            <Input 
+                className="pl-10 bg-slate-900/50 border-slate-800 text-white" 
+                placeholder="Search participant..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+            />
+        </div>
+
+        {/* Table */}
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
+            <table className="w-full text-left text-sm text-slate-400">
+                <thead className="bg-black/40 uppercase text-xs font-bold text-slate-500">
+                    <tr>
+                        <th className="p-4">User</th>
+                        <th className="p-4">Status</th>
+                        <th className="p-4">Round</th>
+                        <th className="p-4 text-center">Tab Switches</th>
+                        <th className="p-4 text-right">Controls</th>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {mockCheatingLogs.map((log) => (
-                      <tr key={log.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                        <td className="p-4 font-mono text-xs text-muted-foreground">{log.timestamp}</td>
-                        <td className="p-4 font-mono text-sm">{log.participantId}</td>
-                        <td className="p-4">
-                          <span className="px-2 py-1 rounded text-xs bg-warning/20 text-warning">
-                            {log.type.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="p-4 font-mono">{log.count}</td>
-                        <td className="p-4">
-                          <span className={cn(
-                            "px-2 py-1 rounded text-xs",
-                            log.action === 'Disqualified' && "bg-destructive/20 text-destructive",
-                            log.action === 'Warning Issued' && "bg-warning/20 text-warning",
-                            log.action === 'Logged' && "bg-muted text-muted-foreground",
-                          )}>
-                            {log.action}
-                          </span>
-                        </td>
-                      </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                    {loading ? (
+                        <tr><td colSpan={5} className="p-8 text-center">Loading live data...</td></tr>
+                    ) : filteredUsers.map((p) => (
+                        <tr key={p.user_id} className="hover:bg-white/5 transition-colors">
+                            <td className="p-4">
+                                <div className="font-bold text-white">{p.email || 'Unknown'}</div>
+                                <div className="text-xs font-mono opacity-50">{p.user_id}</div>
+                            </td>
+                            <td className="p-4">
+                                <span className={cn(
+                                    "px-2 py-1 rounded-full text-xs font-bold border",
+                                    p.status === 'active' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                                    p.status === 'frozen' ? "bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse" :
+                                    "bg-red-500/10 text-red-400 border-red-500/20"
+                                )}>
+                                    {p.status.toUpperCase()}
+                                </span>
+                            </td>
+                            <td className="p-4 capitalize text-white">{p.current_round_slug}</td>
+                            <td className="p-4 text-center font-mono text-lg font-bold text-white">
+                                {p.tab_switches}
+                            </td>
+                            <td className="p-4 text-right space-x-2">
+                                {p.status === 'frozen' ? (
+                                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction('unfreeze', p.user_id)}>
+                                        <Unlock className="w-4 h-4" /> Unfreeze
+                                    </Button>
+                                ) : (
+                                    <Button size="sm" variant="outline" className="border-orange-500 text-orange-400" onClick={() => handleAction('freeze', p.user_id)}>
+                                        <Lock className="w-4 h-4" /> Freeze
+                                    </Button>
+                                )}
+                                <Button size="sm" variant="destructive" onClick={() => handleAction('dq', p.user_id)}>
+                                    <Ban className="w-4 h-4" /> DQ
+                                </Button>
+                            </td>
+                        </tr>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </main>
+                </tbody>
+            </table>
+        </div>
       </div>
     </div>
   );
