@@ -1,13 +1,67 @@
 // src/lib/auth.ts
-import { api } from "./api";
+import { supabase } from "./supabaseClient";
 
-export const loginApi = (data: {
-  email: string;
-  password: string;
-}) => {
-  return api.post("/auth/login", data);
-};
-export const signupApi = (data: any) => {
-  return api.post("/auth/signup", data);
+// Admin Emails List
+const ADMIN_EMAILS = ["admin1@strangertech.in", "kc@strangertech.in"];
+
+// --- LOGIN FUNCTION ---
+export const loginApi = async ({ email, password }: any) => {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) throw error;
+
+  // Check if user is Admin
+  const isAdmin = ADMIN_EMAILS.includes(email);
+
+  return { ...data, isAdmin };
 };
 
+// --- SIGNUP FUNCTION ---
+export const signupApi = async (formData: any) => {
+  // 1. Create Auth User
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email: formData.email,
+    password: formData.password,
+    options: {
+      data: {
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+      },
+    },
+  });
+
+  if (authError) throw authError;
+  if (!authData.user) throw new Error("User creation failed");
+
+  // 2. Create Entry in exam_sessions (Taaki Admin ko user dikhe)
+  const { error: dbError } = await supabase.from("exam_sessions").insert({
+    user_id: authData.user.id,
+    email: formData.email,
+    first_name: formData.firstName,
+    last_name: formData.lastName,
+    class: formData.class,
+    division: formData.division,
+    branch: formData.branch,
+    status: "active",
+    current_round_slug: "rules", // Default start point
+  });
+
+  if (dbError) {
+    // Agar DB entry fail hui, toh user ko delete kar do (Cleanup)
+    console.error("DB Error:", dbError);
+    // Optional: await supabase.auth.admin.deleteUser(authData.user.id);
+    throw new Error("Database initialization failed.");
+  }
+
+  return authData;
+};
+
+// --- LOGOUT FUNCTION ---
+export const logoutApi = async () => {
+  await supabase.auth.signOut();
+  localStorage.removeItem("token");
+  localStorage.removeItem("cesa-storage"); // Clear Zustand store if needed
+};
