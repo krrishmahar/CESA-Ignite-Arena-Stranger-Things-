@@ -19,14 +19,14 @@ export const CompetitionLayout = () => {
   const { 
     currentRound, 
     competitionStatus, 
-    logTabSwitch, // ✅ Using DB logging action
+    logTabSwitch, //  Using DB logging action
     userId 
   } = useCompetitionStore();
 
   const renderRound = () => {
     switch (currentRound) {
       case 'rules': return <RulesPage />;
-      case 'waiting': return <WaitingArea />; // ✅ ADDED
+      case 'waiting': return <WaitingArea />; //  ADDED
       case 'mcq': return <MCQRound />;
       case 'flowchart': return <FlowchartRound />;
       case 'coding': return <CodingRound />;
