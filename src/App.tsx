@@ -24,11 +24,11 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           
-          {/* ✅ PUBLIC ROUTES */}
+          {/*  PUBLIC ROUTES */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           
-          {/* ✅ HOME PAGE IS NOW PUBLIC (Animation sabko dikhegi) */}
+          {/*  HOME PAGE IS NOW PUBLIC (Animation sabko dikhegi) */}
           <Route path="/" element={<Index />} />
 
           {/* 🔒 ADMIN ROUTE (Sirf Admin ke liye protected) */}
