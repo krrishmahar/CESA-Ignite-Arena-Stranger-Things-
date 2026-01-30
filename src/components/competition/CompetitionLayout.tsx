@@ -25,6 +25,37 @@ export const CompetitionLayout = () => {
     syncSession 
   } = useCompetitionStore();
 
+  // 1.5. INITIAL DB SYNC ON MOUNT (Fixes Reload Bug)
+  useEffect(() => {
+    if (!userId) return;
+
+    const initialSync = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('exam_sessions')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (error) {
+          console.error("Initial sync error:", error);
+          return;
+        }
+
+        if (data && data.current_round_slug) {
+          // Always sync to ensure state matches DB (handles reload bug)
+          // This ensures users see the correct round even after page refresh
+          console.log("🔄 Initial Sync: Restoring state from DB -", data.current_round_slug);
+          syncSession(data);
+        }
+      } catch (err) {
+        console.error("Initial sync failed:", err);
+      }
+    };
+
+    initialSync();
+  }, [userId, syncSession]);
+
   const renderRound = () => {
     switch (currentRound) {
       case 'rules': return <RulesPage />;

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient'; 
 import { Lock, LogOut, User } from 'lucide-react';
 import StrangerHero from './StrangerHero'; 
-import { RulesPage } from './competition/RulesPage';
+import { CompetitionLayout } from './competition/CompetitionLayout';
 
 // --- SUB-COMPONENTS ---
 const LockedRules = () => {
@@ -80,20 +80,27 @@ const HomePage = () => {
   useEffect(() => {
     // 1. Initial Session Check
     const checkUser = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        
-        if (session) {
-            // Logged in: NO Intro, check Admin
-            setShowIntro(false);
-            if (session.user.email && ADMIN_EMAILS.includes(session.user.email)) {
-                navigate('/admin');
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            setSession(session);
+            
+            if (session) {
+                // Logged in: NO Intro, check Admin
+                setShowIntro(false);
+                if (session.user.email && ADMIN_EMAILS.includes(session.user.email)) {
+                    navigate('/admin');
+                }
+            } else {
+                // Not Logged in: SHOW Intro
+                setShowIntro(true);
             }
-        } else {
-            // Not Logged in: SHOW Intro
+        } catch (err) {
+            console.error("Session check failed:", err);
+            setSession(null);
             setShowIntro(true);
+        } finally {
+            setLoading(false); // Ready to render even if Supabase misconfigured
         }
-        setLoading(false); // Ready to render
     };
 
     checkUser();
@@ -168,7 +175,7 @@ const HomePage = () => {
                         exit={{ opacity: 0, y: -20 }}
                         transition={{ duration: 0.3 }}
                     >
-                        {activeTab === 'rules' && (session ? <RulesPage /> : <LockedRules />)}
+                        {activeTab === 'rules' && (session ? <CompetitionLayout /> : <LockedRules />)}
                         {activeTab === 'about' && <AboutContent />}
                         {activeTab === 'help' && <HelpContent />}
                     </motion.div>
