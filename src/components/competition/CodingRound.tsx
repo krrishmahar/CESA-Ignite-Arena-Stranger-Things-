@@ -8,6 +8,17 @@ import { useCompetitionStore } from '@/store/competitionStore';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 // --- DATA ---
 const languages = [
@@ -61,7 +72,7 @@ You must write an algorithm with O(log n) runtime complexity.`,
 type ProblemId = keyof typeof problems;
 
 // --- COMPONENT ---
-export const CodingRound = () => {
+export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?: boolean }) => {
   const [activeProblemId, setActiveProblemId] = useState<ProblemId>('two-sum');
   const [language, setLanguage] = useState('python');
   const [code, setCode] = useState(problems['two-sum'].defaultCode.python);
@@ -86,7 +97,7 @@ export const CodingRound = () => {
   const executeCode = async (isSubmission: boolean) => {
     const loadingState = isSubmission ? setIsSubmitting : setIsRunning;
     loadingState(true);
-    if (!isSubmission) setConsoleView('result');
+    // if (!isSubmission) setConsoleView('result'); // Don't auto-switch for 'Run' anymore per user preference for green text in TestCases
 
     const toastId = isSubmission ? toast.loading("Evaluating Solution...") : null;
 
@@ -132,18 +143,7 @@ export const CodingRound = () => {
   const handleRun = () => executeCode(false);
   const handleSubmit = () => executeCode(true);
 
-  const handleReset = () => {
-    if (!confirm('Reset code to default template?')) return;
-    const defaultValue =
-      currentProblem.defaultCode[
-      language as keyof typeof currentProblem.defaultCode
-      ] || '';
-
-    setCode(defaultValue);
-    setRunResult(null);
-    setConsoleView('testcases');
-  };
-
+  // handleReset is now handled inline in AlertDialog
 
   const handleTimeUp = useCallback(() => {
     toast.error("Time Up! Auto-submitting...");
@@ -151,11 +151,14 @@ export const CodingRound = () => {
   }, [handleSubmit]);
 
   return (
-    // MAIN CONTAINER: Fixed Height, split logic
-    <div className="flex gap-3 h-[calc(100vh-6rem)] w-full animate-in fade-in duration-500 overflow-hidden">
+    // MAIN CONTAINER: h-full to fit parent, no calc() needed
+    <div className="flex gap-3 h-full w-full animate-in fade-in duration-500 overflow-hidden">
 
-      {/* --- LEFT PANE: PROBLEM STATEMENT (40%) --- */}
-      <div className="w-[40%] flex flex-col bg-zinc-900/80 border border-zinc-800 rounded-lg overflow-hidden">
+      {/* --- LEFT PANE: PROBLEM STATEMENT (Dynamic Width) --- */}
+      <div className={cn(
+        "flex flex-col bg-zinc-900/80 border border-zinc-800 rounded-lg overflow-hidden transition-all duration-500 ease-in-out",
+        isSidebarExpanded ? "w-[40%]" : "w-[50%]"
+      )}>
         {/* Header with Tabs for Problems */}
         <div className="h-12 border-b border-zinc-800 bg-zinc-900 flex items-center px-4 justify-between shrink-0">
           <Tabs value={activeProblemId} onValueChange={(v) => setActiveProblemId(v as ProblemId)} className="w-full">
@@ -202,7 +205,7 @@ export const CodingRound = () => {
       </div>
 
       {/* --- RIGHT PANE: EDITOR + CONSOLE (60%) --- */}
-      <div className="flex-1 flex flex-col gap-3 min-w-0">
+      <div className="flex-1 flex flex-col gap-3 min-w-0 w-full">
 
         {/* TOP: EDITOR AREA */}
         <div className="flex-1 flex flex-col bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden relative">
@@ -212,28 +215,54 @@ export const CodingRound = () => {
           </div>
 
           {/* Toolbar */}
-          <div className="h-10 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-2 shrink-0">
-            <div className="flex items-center gap-2 justify-between">
+          <div className="h-10 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-3 shrink-0">
+            {/* Left Actions: Language + Reset */}
+            <div className="flex items-center gap-3">
               <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger className="w-[120px] h-7 bg-zinc-900 border-zinc-700 text-xs text-zinc-300">
+                <SelectTrigger className="w-[120px] h-7 bg-zinc-900 border-zinc-700 text-xs text-zinc-300 focus:ring-0 focus:ring-offset-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
-                  {languages.map(l => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+                  {languages.map(l => <SelectItem key={l.id} value={l.id} className="text-xs">{l.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <button
-                onClick={handleReset}
-                title="Reset Code"
-                className="text-gray-400 hover:text-white p-1 ml-2 rounded hover:bg-[#3e3e3e] transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                  <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
-                  <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
-                </svg>
-              </button>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button
+                    title="Reset Code"
+                    className="text-zinc-500 hover:text-red-400 p-1.5 rounded-md hover:bg-red-500/10 transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="bg-zinc-900 border-zinc-800 text-white">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Reset Code?</AlertDialogTitle>
+                    <AlertDialogDescription className="text-zinc-400">
+                      This will revert your current code to the default template.
+                      <strong className="block mt-2 text-red-400">All your changes will be lost.</strong>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700 hover:text-white">Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => {
+                      const defaultValue = currentProblem.defaultCode[language as keyof typeof currentProblem.defaultCode] || '';
+                      setCode(defaultValue);
+                      setRunResult(null);
+                      setConsoleView('testcases');
+                      toast.info("Code reset to default template");
+                    }} className="bg-red-600 text-white hover:bg-red-700 border-red-600">
+                      Yes, Reset Code
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
-            <div className="w-[120px]" /> {/* Spacer for balance */}
+
+            <div className="text-[10px] uppercase tracking-wider text-zinc-600 font-bold select-none">
+              Editor Mode
+            </div>
           </div>
 
           {/* Monaco Editor */}
@@ -259,7 +288,7 @@ export const CodingRound = () => {
         </div>
 
         {/* BOTTOM: CONSOLE / TEST CASES */}
-        <div className="h-[200px] bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col shrink-0">
+        <div className="h-[240px] bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col shrink-0">
           {/* Console Header */}
           <div className="h-9 border-b border-zinc-800 flex items-center justify-between px-2 bg-zinc-950/50">
             <div className="flex gap-1">
@@ -289,23 +318,81 @@ export const CodingRound = () => {
           </div>
 
           {/* Console Body */}
-          <div className="flex-1 p-3 overflow-y-auto custom-scrollbar font-mono text-xs">
+          {/* Console Body */}
+          <div className="flex-1 p-3 overflow-y-auto custom-scrollbar font-mono text-xs bg-zinc-900">
             {consoleView === 'testcases' ? (
               <div className="flex flex-col gap-3">
                 <div className="flex gap-2">
-                  <button onClick={() => setActiveTab('case1')} className={cn("px-3 py-1 rounded border transition-colors", activeTab === 'case1' ? "bg-zinc-800 border-zinc-600 text-white" : "text-zinc-500 border-zinc-800 hover:bg-zinc-900")}>Case 1</button>
-                  <button onClick={() => setActiveTab('case2')} className={cn("px-3 py-1 rounded border transition-colors", activeTab === 'case2' ? "bg-zinc-800 border-zinc-600 text-white" : "text-zinc-500 border-zinc-800 hover:bg-zinc-900")}>Case 2</button>
+                  <button onClick={() => setActiveTab('case1')}
+                    className={cn(
+                      "px-3 py-1 rounded border transition-colors flex items-center gap-2",
+                      activeTab === 'case1' ? "bg-zinc-800 border-zinc-600 text-white" : "text-zinc-500 border-zinc-800 hover:bg-zinc-900"
+                    )}>
+                    {runResult?.results?.[0]?.status === 'Accepted' && <div className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                    {runResult?.results?.[0]?.status === 'Wrong Answer' && <div className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+                    Case 1
+                  </button>
+                  <button onClick={() => setActiveTab('case2')}
+                    className={cn(
+                      "px-3 py-1 rounded border transition-colors flex items-center gap-2",
+                      activeTab === 'case2' ? "bg-zinc-800 border-zinc-600 text-white" : "text-zinc-500 border-zinc-800 hover:bg-zinc-900"
+                    )}>
+                    {runResult?.results?.[1]?.status === 'Accepted' && <div className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                    {runResult?.results?.[1]?.status === 'Wrong Answer' && <div className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+                    Case 2
+                  </button>
                 </div>
-                <div className="space-y-2">
+
+                <div className="space-y-4">
+                  {/* Status if available */}
+                  {runResult && (
+                    <div className="mb-2">
+                      {(() => {
+                        const result = runResult.results?.[activeTab === 'case1' ? 0 : 1];
+                        if (!result) return null;
+                        if (result.status === 'Accepted') return <span className="text-green-500 font-bold">Accepted</span>;
+                        if (result.status === 'Wrong Answer') return <span className="text-red-500 font-bold">Wrong Answer</span>;
+                        return <span className="text-red-400 font-bold">Runtime Error</span>
+                      })()}
+                    </div>
+                  )}
+
                   {/* Display Test Cases dynamically based on Problem */}
-                  <div className="text-zinc-500">Input:</div>
-                  <div className="bg-zinc-950 p-2 rounded border border-zinc-800 text-zinc-300">
-                    {activeTab === 'case1' ? currentProblem.examples[0].input : currentProblem.examples[1].input}
+                  <div>
+                    <div className="text-zinc-500 mb-1">Input:</div>
+                    <div className="bg-zinc-950 p-2 rounded border border-zinc-800 text-zinc-300 font-mono">
+                      {activeTab === 'case1' ? currentProblem.examples[0].input : currentProblem.examples[1].input}
+                    </div>
                   </div>
-                  <div className="text-zinc-500">Expected Output:</div>
-                  <div className="bg-zinc-950 p-2 rounded border border-zinc-800 text-zinc-300">
-                    {activeTab === 'case1' ? currentProblem.examples[0].output : currentProblem.examples[1].output}
+
+                  <div>
+                    <div className="text-zinc-500 mb-1">Expected Output:</div>
+                    <div className="bg-zinc-950 p-2 rounded border border-zinc-800 text-zinc-300 font-mono">
+                      {activeTab === 'case1' ? currentProblem.examples[0].output : currentProblem.examples[1].output}
+                    </div>
                   </div>
+
+                  {/* Show ACTUAL output if available */}
+                  {runResult && (
+                    <div className="animate-in fade-in duration-300">
+                      <div className="text-zinc-500 mb-1">Actual Output:</div>
+                      <div className={cn(
+                        "p-2 rounded border border-zinc-800 font-mono",
+                        (() => {
+                          const result = runResult.results?.[activeTab === 'case1' ? 0 : 1];
+                          if (!result) return "bg-zinc-950 text-zinc-500";
+                          return result.status === 'Accepted' ? "bg-green-950/10 text-green-300 border-green-900/30" : "bg-red-950/10 text-red-300 border-red-900/30";
+                        })()
+                      )}>
+                        {(() => {
+                          const result = runResult.results?.[activeTab === 'case1' ? 0 : 1];
+                          if (!result) return <span className="italic opacity-50">Not executed yet</span>;
+                          if (result.error) return result.error; // Show runtime errors if any
+                          return result.actual;
+                        })()}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
