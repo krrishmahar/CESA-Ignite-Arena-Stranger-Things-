@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, Send, RefreshCw, Terminal, CheckCircle2, XCircle, Clock, Code2, AlertCircle, Cpu, FileJson } from 'lucide-react';
+import { Play, Send, RefreshCw, Terminal, CheckCircle2, XCircle, Clock, Code2, AlertCircle, Cpu, FileJson, Lock, Unlock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CompetitionTimer } from './CompetitionTimer';
@@ -77,33 +77,90 @@ type ProblemId = keyof typeof problems;
 // --- COMPONENT ---
 export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?: boolean }) => {
   const [activeProblemId, setActiveProblemId] = useState<ProblemId>('two-sum');
-  const [language, setLanguage] = useState('python');
-  const [code, setCode] = useState(problems['two-sum'].defaultCode.python);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'case1' | 'case2'>('case1');
-  const [consoleView, setConsoleView] = useState<'testcases' | 'result'>('testcases');
-  const [runResult, setRunResult] = useState<any>(null);
+  // We store the state for EACH problem id
+  const [solutions, setSolutions] = useState<Record<ProblemId, {
+    code: string;
+    language: string;
+    isLocked: boolean;
+    runResult: any;
+    consoleView: 'testcases' | 'result';
+    activeTab: 'case1' | 'case2';
+  }>>({
+    'two-sum': {
+      code: problems['two-sum'].defaultCode.python,
+      language: 'python',
+      isLocked: false,
+      runResult: null,
+      consoleView: 'testcases',
+      activeTab: 'case1'
+    },
+    'binary-search': {
+      code: problems['binary-search'].defaultCode.python,
+      language: 'python',
+      isLocked: false,
+      runResult: null,
+      consoleView: 'testcases',
+      activeTab: 'case1'
+    }
+  });
 
   const { completeRound, email } = useCompetitionStore();
 
   const currentProblem = problems[activeProblemId];
+  const activeSolution = solutions[activeProblemId];
 
-  // Reset code when problem or language changes
-  useEffect(() => {
-    // In a real app, we might want to persist code per problem
-    setCode(currentProblem.defaultCode[language as keyof typeof currentProblem.defaultCode] || '');
-    setRunResult(null); // Clear previous results
-    setConsoleView('testcases');
-  }, [activeProblemId, language]);
+  // Derived state for current view
+  const code = activeSolution.code;
+  const language = activeSolution.language;
+  const isLocked = activeSolution.isLocked;
+  const runResult = activeSolution.runResult;
+  const consoleView = activeSolution.consoleView;
+  const activeTab = activeSolution.activeTab;
 
-  const executeCode = async (isSubmission: boolean) => {
-    const loadingState = isSubmission ? setIsSubmitting : setIsRunning;
-    loadingState(true);
-    // if (!isSubmission) setConsoleView('result'); // Don't auto-switch for 'Run' anymore per user preference for green text in TestCases
+  // -- UPDATER HELPERS --
+  const updateSolution = (updates: Partial<typeof activeSolution>) => {
+    setSolutions(prev => ({
+      ...prev,
+      [activeProblemId]: { ...prev[activeProblemId], ...updates }
+    }));
+  };
 
-    const toastId = isSubmission ? toast.loading("Evaluating Solution...") : null;
+  const setActiveTab = (tab: 'case1' | 'case2') => updateSolution({ activeTab: tab });
 
+  const setCode = (newCode: string) => updateSolution({ code: newCode });
+  const setLanguage = (newLang: string) => {
+    // If locked, we shouldn't be here (UI disabled), but safe guard
+    if (isLocked) return;
+
+    // When changing language, we set to default code for that language IF it was empty or default?
+    // Or just reset to default for that language to avoid syntax errors?
+    // Requirement: "user select C in 2sums -> writes code -> lock then that tab should lock on C... same is in binary search... switching... shouldn't clear"
+    // So when Switching Tab (activeProblemId changes), we load save state.
+    // But when active tab is SAME, and we change Language, we usually reset code to template.
+    const defaultCode = currentProblem.defaultCode[newLang as keyof typeof currentProblem.defaultCode] || '';
+    updateSolution({ language: newLang, code: defaultCode, runResult: null });
+  };
+
+  const setRunResult = (res: any) => updateSolution({ runResult: res });
+  const setConsoleView = (view: 'testcases' | 'result') => updateSolution({ consoleView: view });
+
+  // No useEffect for resetting anymore! State is derived from solutions[activeProblemId].
+
+  const toggleLock = () => {
+    const nextLocked = !isLocked;
+    updateSolution({ isLocked: nextLocked });
+    if (nextLocked) toast.success(`Locked ${currentProblem.title}`);
+    else toast.info(`Unlocked ${currentProblem.title}`);
+  };
+
+  // --- SUBMISSION STATE ---
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [submitStats, setSubmitStats] = useState<{ score: number; details: string; outcomes: string[] } | null>(null);
+
+  const executeResult = async (probId: ProblemId, isSubmission: boolean) => {
+    const sol = solutions[probId];
     try {
       const response = await fetch('http://localhost:3001/api/execute', {
         method: 'POST',
@@ -111,47 +168,106 @@ export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?:
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          code,
-          language,
-          problemId: activeProblemId,
-          teamName: email || 'Anonymous', // Mapped to teamName as requested
+          code: sol.code,
+          language: sol.language,
+          problemId: probId,
+          teamName: email || 'Anonymous',
           isSubmission,
         }),
       });
+      return await response.json();
+    } catch (e) {
+      return { status: 'Error', output: 'Network Error', results: [], score: 0 };
+    }
+  };
 
-      const data = await response.json();
+  const executeCode = async (isSubmission: boolean, skipConfirm: boolean = false) => {
+    const loadingState = isSubmission ? setIsSubmitting : setIsRunning;
+    loadingState(true);
 
-      if (isSubmission) {
-        if (data.status === 'Accepted') {
-          toast.success(`Solution Accepted! Score: ${data.score}/100`, { id: toastId });
-          // Optional: Mark problem as done locally or trigger completion
-          // For now, we just complete the round if they pass (simplified logic)
-          // completeRound('coding'); 
-        } else {
-          toast.error(`Solution Rejected. Score: ${data.score || 0}/100`, { id: toastId });
-        }
+    const toastId = isSubmission ? toast.loading("Evaluating Solution...") : null;
+
+    try {
+      // If just running, only run ACTIVE problem
+      if (!isSubmission) {
+        const data = await executeResult(activeProblemId, false);
+        setRunResult(data);
+        loadingState(false);
+        return;
       }
 
-      setRunResult(data);
+      // SUBMISSION LOGIC (Both Problems)
+      const p1 = await executeResult('two-sum', true);
+      const p2 = await executeResult('binary-search', true);
+
+      // Update local states so user sees results if they switch tabs
+      setSolutions(prev => ({
+        ...prev,
+        'two-sum': { ...prev['two-sum'], runResult: p1 },
+        'binary-search': { ...prev['binary-search'], runResult: p2 }
+      }));
+
+      const p1Score = parseFloat(p1.score || 0);
+      const p2Score = parseFloat(p2.score || 0);
+      const totalScore = (p1Score + p2Score) / 2;
+
+      // If triggered by Time Up (skipConfirm), submit immediately
+      if (skipConfirm) {
+        toast.success(`Time's Up! Submitted with Score: ${totalScore}/100`, { id: toastId });
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        completeRound('coding');
+        return;
+      }
+
+      // Manual Submission - ALWAYS ASK CONFIRMATION (even if perfect)
+      const details = `Two Sum: ${p1.status}, Binary Search: ${p2.status}`;
+      const outcomes = [
+        `Two Sum: ${p1.status} (${p1Score}pts)`,
+        `Binary Search: ${p2.status} (${p2Score}pts)`
+      ];
+
+      setSubmitStats({ score: totalScore, details, outcomes });
+      setShowSubmitConfirm(true);
+      toast.dismiss(toastId);
 
     } catch (error) {
       console.error("Execution Error:", error);
       if (isSubmission) toast.error("Execution failed due to network error", { id: toastId });
-      setRunResult({ status: 'Error', output: 'Network Error: Could not reach execution server.' });
     } finally {
       loadingState(false);
     }
   };
 
   const handleRun = () => executeCode(false);
-  const handleSubmit = () => executeCode(true);
+
+  // Submit is only allowed if BOTH problems are locked
+  const canSubmit = solutions['two-sum'].isLocked && solutions['binary-search'].isLocked;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) {
+      toast.error("You must Lock code for BOTH problems before submitting.");
+      return;
+    }
+    await executeCode(true, false);
+  };
+
+  const handleConfirmSubmit = () => {
+    completeRound('coding');
+    setShowSubmitConfirm(false);
+  };
 
   // handleReset is now handled inline in AlertDialog
 
   const handleTimeUp = useCallback(() => {
-    toast.error("Time Up! Auto-submitting...");
-    handleSubmit();
-  }, [handleSubmit]);
+    toast.error("Time Up! Locking and Submitting...");
+    setSolutions(prev => ({
+      ...prev,
+      'two-sum': { ...prev['two-sum'], isLocked: true },
+      'binary-search': { ...prev['binary-search'], isLocked: true }
+    }));
+    // Force submit current with skipConfirm = true
+    executeCode(true, true);
+  }, []);
 
   return (
     // MAIN CONTAINER: h-full to fit parent, no calc() needed
@@ -219,10 +335,10 @@ export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?:
 
           {/* Toolbar */}
           <div className="h-10 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-3 shrink-0">
-            {/* Left Actions: Language + Reset */}
+            {/* Left Actions: Language + Reset + Lock */}
             <div className="flex items-center gap-3">
-              <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger className="w-[120px] h-7 bg-zinc-900 border-zinc-700 text-xs text-zinc-300 focus:ring-0 focus:ring-offset-0">
+              <Select value={language} onValueChange={setLanguage} disabled={isLocked}>
+                <SelectTrigger className="w-[120px] h-7 bg-zinc-900 border-zinc-700 text-xs text-zinc-300 focus:ring-0 focus:ring-offset-0 disabled:opacity-50">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
@@ -230,11 +346,27 @@ export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?:
                 </SelectContent>
               </Select>
 
+              {/* LOCK BUTTON */}
+              <button
+                onClick={toggleLock}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-all border",
+                  isLocked
+                    ? "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20"
+                    : "bg-green-500/10 text-green-500 border-green-500/20 hover:bg-green-500/20"
+                )}
+                title={isLocked ? "Unlock Code" : "Lock Code"}
+              >
+                {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                {isLocked ? "Locked" : "Lock Code"}
+              </button>
+
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <button
-                    title="Reset Code"
-                    className="text-zinc-500 hover:text-red-400 p-1.5 rounded-md hover:bg-red-500/10 transition-colors"
+                    disabled={isLocked}
+                    title={isLocked ? "Unlock to Reset" : "Reset Code"}
+                    className="text-zinc-500 hover:text-red-400 p-1.5 rounded-md hover:bg-red-500/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
@@ -251,9 +383,8 @@ export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?:
                     <AlertDialogCancel className="bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700 hover:text-white">Cancel</AlertDialogCancel>
                     <AlertDialogAction onClick={() => {
                       const defaultValue = currentProblem.defaultCode[language as keyof typeof currentProblem.defaultCode] || '';
-                      setCode(defaultValue);
-                      setRunResult(null);
-                      setConsoleView('testcases');
+                      // Use updateSolution directly for cleaner atomic update
+                      updateSolution({ code: defaultValue, runResult: null, consoleView: 'testcases', activeTab: 'case1' });
                       toast.info("Code reset to default template");
                     }} className="bg-red-600 text-white hover:bg-red-700 border-red-600">
                       Yes, Reset Code
@@ -261,22 +392,54 @@ export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?:
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+
+              {/* PARTIAL SUBMISSION CONFIRMATION DIALOG */}
+              <AlertDialog open={showSubmitConfirm} onOpenChange={setShowSubmitConfirm}>
+                <AlertDialogContent className="bg-zinc-900 border-zinc-800 text-white">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-yellow-500 flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5" /> Confirm Submission
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="text-zinc-400 space-y-3">
+                      <p>You have evaluated your code. Here are the results:</p>
+
+                      <div className="bg-zinc-950 p-3 rounded border border-zinc-800 space-y-1 font-mono text-xs">
+                        {submitStats?.outcomes.map((o, i) => <div key={i}>{o}</div>)}
+                        <div className="border-t border-zinc-800 mt-2 pt-2 font-bold text-white">Total Score: {submitStats?.score}/100</div>
+                      </div>
+
+                      <p>Are you ready to finalize this submission?</p>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700 hover:text-white">
+                      Keep Working
+                    </AlertDialogCancel>
+                    <AlertDialogAction onClick={handleConfirmSubmit} className="bg-yellow-600 text-white hover:bg-yellow-700 border-yellow-600">
+                      Yes, Submit Implementation
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
 
             <div className="text-[10px] uppercase tracking-wider text-zinc-600 font-bold select-none">
-              Editor Mode
+              {isLocked ? "READ-ONLY" : "EDIT MODE"}
             </div>
           </div>
 
           {/* Monaco Editor */}
           <div className="flex-1 relative">
             <Editor
+              key={`${activeProblemId}-${language}`} // Force remount on problem change to prevent state bleeding
               height="100%"
+              path={`${activeProblemId}.${language === 'cpp' ? 'cpp' : language}`} // Unique model path
               language={language === 'cpp' ? 'cpp' : language}
               value={code}
-              onChange={(v) => setCode(v || '')}
+              onChange={(v) => !isLocked && setCode(v || '')}
               theme="vs-dark"
               options={{
+                readOnly: isLocked, // READ ONLY WHEN LOCKED
                 minimap: { enabled: false },
                 fontSize: 13,
                 fontFamily: "'JetBrains Mono', monospace",
@@ -314,13 +477,13 @@ export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?:
               <Button size="sm" variant="secondary" onClick={handleRun} disabled={isRunning || isSubmitting} className="h-6 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700">
                 {isRunning ? <RefreshCw className="w-3 h-3 animate-spin mr-1" /> : <Play className="w-3 h-3 mr-1" />} Run
               </Button>
-              <Button size="sm" onClick={handleSubmit} disabled={isSubmitting || isRunning} className="h-6 text-xs bg-green-700 hover:bg-green-600 text-white border border-green-600">
-                {isSubmitting ? <RefreshCw className="w-3 h-3 animate-spin mr-1" /> : <Send className="w-3 h-3 mr-1" />} Submit
+              <Button size="sm" onClick={handleSubmit} disabled={isSubmitting || isRunning || !canSubmit} className={cn("h-6 text-xs border transition-all", canSubmit ? "bg-green-700 hover:bg-green-600 text-white border-green-600" : "bg-zinc-800 text-zinc-500 border-zinc-700 cursor-not-allowed")}>
+                {isSubmitting ? <RefreshCw className="w-3 h-3 animate-spin mr-1" /> : <Send className="w-3 h-3 mr-1" />}
+                {canSubmit ? "Submit" : "Lock Both to Submit"}
               </Button>
             </div>
           </div>
 
-          {/* Console Body */}
           {/* Console Body */}
           <div className="flex-1 p-3 overflow-y-auto custom-scrollbar font-mono text-xs bg-zinc-900">
             {consoleView === 'testcases' ? (
