@@ -92,33 +92,74 @@ const PROBLEMS: Record<string, Problem> = {
         id: 'two-sum',
         title: 'Two Sum',
         testCases: [
+            // Visible
             { input: "nums = [2,7,11,15], target = 9", expected: "[0,1]", hidden: false, params: { nums: [2, 7, 11, 15], target: 9 } },
             { input: "nums = [3,2,4], target = 6", expected: "[1,2]", hidden: false, params: { nums: [3, 2, 4], target: 6 } },
-            { input: "nums = [3,3], target = 6", expected: "[0,1]", hidden: true, params: { nums: [3, 3], target: 6 } },
-            // Hidden Benchmark (Large Input) to force O(n) or O(n log n)
+            { input: "nums = [-3,4,3,90], target = 0", expected: "[0,2]", hidden: false, params: { nums: [-3, 4, 3, 90], target: 0 } },
+
+            // Hidden - Edge
+            { input: "nums = [1,1,1,2,3], target = 2", expected: "[0,1]", hidden: true, params: { nums: [1, 1, 1, 2, 3], target: 2 } },
+            { input: "nums = [-10,-20,30,40], target = 20", expected: "[1,2]", hidden: true, params: { nums: [-10, -20, 30, 40], target: 20 } },
+
+            // Hidden - Random shaped
             {
-                input: "nums = [0,0...0,1,2], target = 3",
-                expected: "[9998,9999]",
+                input: "nums = random(200), target = dynamic",
+                expected: "dynamic",
                 hidden: true,
-                params: {
-                    nums: [...Array(9998).fill(0), 1, 2],
-                    target: 3
-                }
+                params: (() => {
+                    const nums = Array.from({ length: 200 }, () => Math.floor(Math.random() * 2000 - 1000));
+                    const i = 50, j = 150;
+                    return { nums, target: nums[i] + nums[j], answer: [i, j] };
+                })()
+            },
+
+            // Hidden - Large Benchmark
+            {
+                input: "nums = large(100000), target = lastPair",
+                expected: "dynamic",
+                hidden: true,
+                params: (() => {
+                    const nums = Array.from({ length: 100000 }, (_, i) => i * 2);
+                    const a = 88888, b = 99999;
+                    return { nums, target: nums[a] + nums[b], answer: [a, b] };
+                })()
             }
         ],
         functionName: 'twoSum'
     },
+
     'binary-search': {
         id: 'binary-search',
         title: 'Binary Search',
         testCases: [
+            // Visible
             { input: "nums = [-1,0,3,5,9,12], target = 9", expected: "4", hidden: false, params: { nums: [-1, 0, 3, 5, 9, 12], target: 9 } },
             { input: "nums = [-1,0,3,5,9,12], target = 2", expected: "-1", hidden: false, params: { nums: [-1, 0, 3, 5, 9, 12], target: 2 } },
-            { input: "nums = [5], target = 5", expected: "0", hidden: true, params: { nums: [5], target: 5 } }
+            { input: "nums = [1,3,5,7,9], target = 1", expected: "0", hidden: false, params: { nums: [1, 3, 5, 7, 9], target: 1 } },
+
+            // Hidden - Edge
+            { input: "nums = [5], target = 5", expected: "0", hidden: true, params: { nums: [5], target: 5 } },
+            { input: "nums = [5], target = 1", expected: "-1", hidden: true, params: { nums: [5], target: 1 } },
+
+            // Hidden - Gapped values
+            { input: "nums = [-1000,-500,-10,0,9,100,1000], target = 100", expected: "5", hidden: true, params: { nums: [-1000, -500, -10, 0, 9, 100, 1000], target: 100 } },
+
+            // Hidden - Large Benchmark
+            {
+                input: "nums = sorted(200000), target = randomHit",
+                expected: "dynamic",
+                hidden: true,
+                params: (() => {
+                    const nums = Array.from({ length: 200000 }, (_, i) => i * 3 - 100000);
+                    const idx = 150321;
+                    return { nums, target: nums[idx], answer: idx };
+                })()
+            }
         ],
         functionName: 'search'
     }
 };
+
 
 const JUDGE0_LANG_IDS: Record<string, number> = {
     'javascript': 63,
@@ -133,7 +174,7 @@ function validateCode(code: string, language: string): boolean {
     if (!code || code.trim().length < 1) return false;
 
     // Basic Sanitizer: Check for forbidden strings
-    const forbidden = ['process.exit', 'exec(', 'spawn(', 'os.system', 'eval(', '__import__'];
+    const forbidden = ['process.exit', 'exec(', 'spawn(', 'os.system', 'eval(', '__import__', 'system('];
     if (forbidden.some(f => code.includes(f))) return false;
 
     return true;
@@ -144,7 +185,7 @@ function validateCode(code: string, language: string): boolean {
 const TEMPLATES: Record<string, string> = {};
 
 async function loadTemplates() {
-    const langs = ['javascript', 'typescript', 'python', 'java', 'cpp'];
+    const langs = ['javascript', 'typescript', 'python', 'java', 'cpp', 'c'];
     for (const lang of langs) {
         try {
             const templatePath = path.join(__dirname, 'templates', `${lang}.txt`);
@@ -169,9 +210,8 @@ function wrapCode(code: string, language: string, problem: Problem): string {
         .replace('{{FUNCTION_NAME}}', problem.functionName)
         .replace('{{TEST_CASES_JSON}}', testCasesJSON);
 
-    // Special handling for Java/C++ Test Runner generation (Dynamic dispatch based on problem)
+    // Special handling for Compiled Languages (C/C++/Java require static Test Runners)
     if (language === 'java') {
-        // Sanitize class name
         const sanitizedCode = code.replace(/public\s+class\s+Solution/, 'class Solution');
         wrapped = wrapped.replace('{{USER_CODE}}', sanitizedCode);
 
@@ -182,8 +222,11 @@ function wrapCode(code: string, language: string, problem: Problem): string {
             System.out.println("Test Case 1: " + Arrays.toString(r1).replaceAll(" ", ""));
             int[] r2 = sol.twoSum(new int[]{3,2,4}, 6);
             System.out.println("Test Case 2: " + Arrays.toString(r2).replaceAll(" ", ""));
-            int[] r3 = sol.twoSum(new int[]{3,3}, 6);
-            System.out.println("Test Case 3: " + Arrays.toString(r3).replaceAll(" ", ""));
+            // Empty Case (Handling carefully as 0,1 is expected for this specific trick case)
+            try {
+                int[] r3 = sol.twoSum(new int[]{}, -1);
+                System.out.println("Test Case 3: " + Arrays.toString(r3).replaceAll(" ", "")); 
+            } catch (Exception e) { System.out.println("Test Case 3: Error"); }
              `;
         } else {
             runnerCode = `
@@ -205,9 +248,9 @@ function wrapCode(code: string, language: string, problem: Problem): string {
                 cout << "Test Case 1: "; printVector(res1); cout << endl;
                 vector<int> res2 = sol.twoSum({3,2,4}, 6);
                 cout << "Test Case 2: "; printVector(res2); cout << endl;
-                vector<int> res3 = sol.twoSum({3,3}, 6);
+                vector<int> res3 = sol.twoSum({}, -1);
                 cout << "Test Case 3: "; printVector(res3); cout << endl;
-            } catch (...) {}
+            } catch (...) { cout << "Test Case 3: Error" << endl; }
              `;
         } else {
             runnerCode = `
@@ -218,8 +261,42 @@ function wrapCode(code: string, language: string, problem: Problem): string {
                 cout << "Test Case 2: " << r2 << endl;
                 int r3 = sol.search({5}, 5);
                 cout << "Test Case 3: " << r3 << endl;
-            } catch (...) {}
+            } catch (...) { cout << "Error" << endl; }
              `;
+        }
+        wrapped = wrapped.replace('{{TEST_RUNNER}}', runnerCode);
+    } else if (language === 'c') {
+        let runnerCode = "";
+        if (problem.id === 'two-sum') {
+            // C requires explicit array passing and size
+            runnerCode = `
+            int returnSize;
+            int nums1[] = {2,7,11,15};
+            int* r1 = twoSum(nums1, 4, 9, &returnSize);
+            printf("Test Case 1: "); printArray(r1, returnSize); printf("\\n");
+            
+            int nums2[] = {3,2,4};
+            int* r2 = twoSum(nums2, 3, 6, &returnSize);
+            printf("Test Case 2: "); printArray(r2, returnSize); printf("\\n");
+
+            int nums3[] = {};
+            int* r3 = twoSum(nums3, 0, -1, &returnSize);
+            printf("Test Case 3: "); printArray(r3, returnSize); printf("\\n");
+            `;
+        } else {
+            runnerCode = `
+            int nums1[] = {-1,0,3,5,9,12};
+            int r1 = search(nums1, 6, 9);
+            printf("Test Case 1: %d\\n", r1);
+
+            int nums2[] = {-1,0,3,5,9,12};
+            int r2 = search(nums2, 6, 2);
+            printf("Test Case 2: %d\\n", r2);
+
+            int nums3[] = {5};
+            int r3 = search(nums3, 1, 5);
+            printf("Test Case 3: %d\\n", r3);
+            `;
         }
         wrapped = wrapped.replace('{{TEST_RUNNER}}', runnerCode);
     }

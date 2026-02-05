@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
+// Wrapper for the User's Code
+// Write the code in given function
 {{USER_CODE}}
 
 public class Main {

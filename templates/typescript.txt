@@ -3,14 +3,17 @@
 // Test Runner
 const testCases = {{TEST_CASES_JSON}};
 
-const startTime = performance.now();
+const startTime = Date.now();
+
 testCases.forEach((tc: any, index: number) => {
     try {
         const result = {{FUNCTION_NAME}}(tc.nums, tc.target);
-        console.log(`Test Case ${index + 1}: ${JSON.stringify(result)}`);
+        const out = JSON.stringify(result).replace(/\s+/g, "");
+        console.log(`__JUDGE__ Test Case ${index + 1}: ${out}`);
     } catch (e: any) {
-            console.log(`Test Case ${index + 1}: Error - ${e.message}`);
+        console.log(`__JUDGE__ Test Case ${index + 1}: -1`);
     }
 });
-const endTime = performance.now();
+
+const endTime = Date.now();
 console.log(`METRICS: TIME=${(endTime - startTime).toFixed(4)}ms`);

@@ -24,6 +24,7 @@ import {
 const languages = [
   { id: 'python', name: 'Python 3', extension: 'py' },
   { id: 'cpp', name: 'C++17', extension: 'cpp' },
+  { id: 'c', name: 'C (GCC)', extension: 'c' },
   { id: 'java', name: 'Java 17', extension: 'java' },
   { id: 'javascript', name: 'JavaScript', extension: 'js' },
 ];
@@ -45,6 +46,7 @@ You can return the answer in any order.`,
     defaultCode: {
       python: `class Solution:\n    def twoSum(self, nums: List[int], target: int) -> List[int]:\n        # Write your code here\n        pass`,
       cpp: `class Solution {\npublic:\n    vector<int> twoSum(vector<int>& nums, int target) {\n        \n    }\n};`,
+      c: `/**\n * Note: The returned array must be malloced, assume caller calls free().\n */\nint* twoSum(int* nums, int numsSize, int target, int* returnSize) {\n    \n}`,
       java: `class Solution {\n    public int[] twoSum(int[] nums, int target) {\n        \n    }\n}`,
       javascript: `/**\n * @param {number[]} nums\n * @param {number} target\n * @return {number[]}\n */\nvar twoSum = function(nums, target) {\n    \n};`
     }
@@ -63,6 +65,7 @@ You must write an algorithm with O(log n) runtime complexity.`,
     defaultCode: {
       python: `class Solution:\n    def search(self, nums: List[int], target: int) -> int:\n        # Write your code here\n        pass`,
       cpp: `class Solution {\npublic:\n    int search(vector<int>& nums, int target) {\n        \n    }\n};`,
+      c: `int search(int* nums, int numsSize, int target) {\n    \n}`,
       java: `class Solution {\n    public int search(int[] nums, int target) {\n        \n    }\n}`,
       javascript: `/**\n * @param {number[]} nums\n * @param {number} target\n * @return {number}\n */\nvar search = function(nums, target) {\n    \n};`
     }
