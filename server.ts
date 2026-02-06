@@ -17,7 +17,19 @@ const app = express();
 const PORT = 3001;
 
 // JUDGE0 CONFIG
-const JUDGE0_URL = 'http://172.20.0.10:2358';
+const JUDGE0_URLS = [
+    process.env.JUDGE0_URL,
+    'http://172.20.0.10:2358',
+    'http://localhost:2358',
+    'http://backup:2358'
+];
+
+// Supabase Config
+import { createClient } from '@supabase/supabase-js';
+const supabase = createClient(
+    process.env.VITE_SUPABASE_URL || '',
+    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
+);
 
 // RATE LIMITER
 const limiter = rateLimit({
@@ -325,9 +337,55 @@ function wrapCode(code: string, language: string, problem: Problem): string {
     return wrapped;
 }
 
+
+
+// Helper: Submit to Judge0 with Fallback
+async function submitWithFallback(payload: any): Promise<any> {
+    let lastError: any = null;
+
+    for (const url of JUDGE0_URLS) {
+        try {
+            console.log(`[JUDGE0] Attempting submission to ${url}...`);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+            const response = await fetch(`${url}/submissions?base64_encoded=true&wait=false`, { // Async submission (wait=false)
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                // If 4xx, it's a client error (e.g., bad code), don't retry, just throw
+                if (response.status >= 400 && response.status < 500) {
+                    throw new Error(`Judge0 Client Error: ${response.status} ${response.statusText}`);
+                }
+                throw new Error(`Judge0 Server Error: ${response.status} ${response.statusText}`);
+            }
+
+            const data: any = await response.json();
+            console.log(`[JUDGE0] Submission accepted on ${url}. Token: ${data.token}`);
+            return { token: data.token, url }; // Return token and the URL used (for polling)
+
+        } catch (err: any) {
+            console.error(`[JUDGE0] Failed to submit to ${url}: ${err.message}`);
+            lastError = err;
+            if (err.message.includes("Client Error")) throw err; // Don't fallback on client error
+            // Continue to next URL
+        }
+    }
+    throw lastError || new Error("All Judge0 instances failed.");
+}
+
+
 app.post('/api/execute', async (req: express.Request, res: express.Response) => {
-    const { code, language, problemId, teamName, isSubmission } = req.body;
-    console.log(`[EXECUTE] Request received for ${problemId || 'unknown'} in ${language} (Submission: ${isSubmission})`);
+    // ASYNC SUBMISSION FLOW
+    const { code, language, problemId, teamName, isSubmission, userId } = req.body;
+    console.log(`[EXECUTE] Async Request received for ${problemId} in ${language} (User: ${userId})`);
 
     const problem = PROBLEMS[problemId] || PROBLEMS['two-sum'];
 
@@ -335,146 +393,184 @@ app.post('/api/execute', async (req: express.Request, res: express.Response) => 
         return res.status(400).json({ status: 'Invalid', output: 'Code validation failed: Restricted content detected.', results: [] });
     }
 
-    let savedFile = null;
-    if (isSubmission) {
-        // Persistence: Save to local bucket ONLY on submit
-        savedFile = await saveToBucket(teamName || "anonymous", problemId || "two-sum", language, code);
-    }
-    // If not submission, we DO NOT write to disk (as requested: "Run Code -> No Persistence")
-
-    const wrappedCode = wrapCode(code, language, problem);
-    const judge0Id = JUDGE0_LANG_IDS[language];
-
-    if (!judge0Id) {
-        return res.status(400).json({ status: 'Error', output: 'Unsupported Language', results: [] });
-    }
-
     try {
-        const payload = {
-            source_code: Buffer.from(wrappedCode).toString('base64'),
-            language_id: judge0Id,
-            stdin: Buffer.from("").toString('base64')
-        };
+        // 1. Create DB Record (Queued)
+        const { data: insertData, error: dbError } = await supabase
+            .from('executions')
+            .insert({
+                user_id: userId || 'anonymous',
+                language,
+                code,
+                status: 'queued',
+                stdout: '',
+                stderr: '',
+                score: 0
+            })
+            .select()
+            .single();
 
-        console.log(`[JUDGE0] Sending to ${JUDGE0_URL}... LangID: ${judge0Id}`);
-
-        // Send to Judge0
-        const response = await fetch(`${JUDGE0_URL}/submissions?base64_encoded=true&wait=true`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-            throw new Error(`Judge0 responded with status: ${response.status} ${response.statusText}`);
+        if (dbError) {
+            console.error("Supabase Insert Error:", dbError);
+            return res.status(500).json({ error: "Failed to queue execution." });
         }
 
-        const data: any = await response.json();
-        console.log(`[JUDGE0] Response received. Status ID: ${data.status?.id} (${data.status?.description})`);
+        const jobId = insertData.id;
+        res.json({ job_id: jobId, status: 'queued' }); // Immediate response
 
-        // Check for Compile Error
-        if (data.status.id === 6) {
-            const compileOutput = Buffer.from(data.compile_output || "", 'base64').toString('utf-8');
-            console.log(`[JUDGE0] Compilation Error: ${compileOutput}`);
-            return res.json({
-                status: 'Compilation Error',
-                output: compileOutput,
-                results: [],
-                metrics: { time: 0 },
-                score: 0,
-                documentation: savedFile
-            });
-        }
+        // 2. Trigger Background Submission
+        (async () => {
+            try {
+                let savedFile = null;
+                if (isSubmission) {
+                    savedFile = await saveToBucket(teamName || "anonymous", problemId || "two-sum", language, code);
+                }
 
-        // Runtime Error check from stderr
-        if (!data.stdout && data.stderr) {
-            const stderr = Buffer.from(data.stderr, 'base64').toString('utf-8');
-            console.log(`[JUDGE0] Stderr: ${stderr}`);
-            return res.json({
-                status: 'Runtime Error',
-                output: stderr,
-                results: [],
-                metrics: { time: 0 },
-                score: 0,
-                documentation: savedFile
-            });
-        }
+                const wrappedCode = wrapCode(code, language, problem);
+                const judge0Id = JUDGE0_LANG_IDS[language];
 
-        // Success (potentially)
-        const outputString = data.stdout ? Buffer.from(data.stdout, 'base64').toString('utf-8') : "";
-        console.log(`[JUDGE0] Stdout Preview: ${outputString.substring(0, 100)}...`);
+                if (!judge0Id) throw new Error("Unsupported Language");
 
-        // Extract Time Metric
-        const timeMatch = outputString.match(/METRICS: TIME=([\d.]+)ms/);
-        const runTime = timeMatch ? parseFloat(timeMatch[1]) : (parseFloat(data.time) * 1000 || 0);
-
-        // Parse Results & Scoring (STRICT MODE: ONLY __JUDGE__ lines)
-        let passedCount = 0;
-        const judgeLines = outputString.split('\n').filter((l: string) => l.startsWith('__JUDGE__ '));
-
-        const finalResults = problem.testCases.map((tc: TestCase, index: number) => {
-            const searchStr = `__JUDGE__ Test Case ${index + 1}: `;
-            const line = judgeLines.find((l: string) => l.includes(searchStr));
-
-            // Default to Error if not found
-            if (!line) return { ...tc, actual: "No Output", status: "Runtime Error" };
-
-            const actual = line.replace(searchStr, '').trim();
-            const normalize = (s: string) => s.replace(/\s+/g, '');
-
-            // Loose comparison (remove spaces)
-            const passed = normalize(actual) === normalize(tc.expected);
-
-            if (passed) passedCount++;
-
-            if (tc.hidden) {
-                return {
-                    ...tc,
-                    input: "Hidden",
-                    expected: "Hidden",
-                    actual: passed ? "Hidden" : "Hidden",
-                    status: passed ? "Accepted" : "Wrong Answer"
+                const payload = {
+                    source_code: Buffer.from(wrappedCode).toString('base64'),
+                    language_id: judge0Id,
+                    stdin: Buffer.from("").toString('base64'),
+                    callback_url: `${process.env.PUBLIC_API_URL || 'http://localhost:3001'}/api/callback` // Optional: if we want webhook
                 };
+
+                // Submit to Judge0 (with fallback)
+                const { token, url: employedUrl } = await submitWithFallback(payload);
+
+                // Update DB with Token and set status to 'running'
+                await supabase
+                    .from('executions')
+                    .update({
+                        status: 'running',
+                        metadata: { judge0_token: token, judge0_url: employedUrl, problem_id: problemId, saved_file: savedFile }
+                    })
+                    .eq('id', jobId);
+
+            } catch (bgError: any) {
+                console.error(`[BACKGROUND] Job ${jobId} Failed:`, bgError);
+                await supabase
+                    .from('executions')
+                    .update({ status: 'error', stderr: bgError.message })
+                    .eq('id', jobId);
             }
+        })();
 
-            return {
-                ...tc,
-                actual,
-                status: passed ? "Accepted" : "Wrong Answer"
-            };
-        });
-
-        const score = ((passedCount / problem.testCases.length) * 100).toFixed(2);
-        const finalStatus = finalResults.every((r: any) => r.status === 'Accepted') ? 'Accepted' : 'Wrong Answer';
-
-        // Output sanitized logs (remove Judge prefix for cleaner UI if desired, or keep it)
-        // Let's strip the prefix for the frontend console view
-        const cleanOutput = judgeLines.map((l: string) => l.replace('__JUDGE__ ', '')).join('\n');
-
-        res.json({
-            status: finalStatus,
-            output: cleanOutput, // Only show relevant judge output to user
-            results: finalResults,
-            metrics: {
-                time: runTime
-            },
-            score,
-            documentation: savedFile
-        });
-
-    } catch (error: any) {
-        console.error("Judge0 Error:", error);
-        res.status(500).json({ status: 'Error', output: `Judge0 Connection Failed: ${error.message}. Is Judge0 running on port 2358?`, results: [] });
+    } catch (e: any) {
+        console.error("Judge0 Error:", e);
+        res.status(500).json({ status: 'Error', output: `Judge0 Connection Failed: ${e.message}. Is Judge0 running on port 2358?`, results: [] });
     }
 });
 
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`Using Judge0 at ${JUDGE0_URL}`);
+    console.log(`Using Judge0 URLs: ${JUDGE0_URLS.join(', ')}`);
     console.log(`📁 Bucket: ${BUCKET_DIR}`);
 });
 app.get('/healthcheck', (req: express.Request, res: express.Response) => {
-    res.status(200).json({ status: 'ok' });
+    res.status(200).json({ status: 'ok', judge0_urls: JUDGE0_URLS });
 });
+
+// STATUS ENDPOINT
+app.get('/api/status/:id', async (req: express.Request, res: express.Response) => {
+    const { id } = req.params;
+    const { data, error } = await supabase.from('executions').select('*').eq('id', id).single();
+    if (error || !data) return res.status(404).json({ error: 'Job not found' });
+    res.json(data);
+});
+
+// POLLING WORKER
+setInterval(async () => {
+    // 1. Fetch running jobs
+    const { data: jobs, error } = await supabase
+        .from('executions')
+        .select('*')
+        .eq('status', 'running')
+        .not('metadata', 'is', null) // Ensure metadata exists
+        .limit(10); // Batch size
+
+    if (error || !jobs || jobs.length === 0) return;
+
+    for (const job of jobs) {
+        try {
+            const { judge0_token, judge0_url, problem_id, saved_file } = job.metadata;
+            if (!judge0_token) continue;
+
+            // console.log(`[POLL] Checking job ${job.id} at ${judge0_url}...`);
+
+            const response = await fetch(`${judge0_url}/submissions/${judge0_token}?base64_encoded=true`, {
+                signal: AbortSignal.timeout(5000)
+            });
+
+            if (!response.ok) continue;
+
+            const data: any = await response.json();
+
+            // Check Status
+            // 1: In Queue, 2: Processing, 3: Accepted, 4-14: Errors/Wrong Answer
+            if (data.status.id <= 2) {
+                // Still running
+                continue;
+            }
+
+            // Finished! Process Result
+            console.log(`[POLL] Job ${job.id} finished with status ${data.status.description}`);
+
+            let finalStatus = 'error';
+            let output = '';
+            let score = 0;
+            let stderr = '';
+
+            if (data.status.id === 6) { // Compilation Error
+                output = Buffer.from(data.compile_output || "", 'base64').toString('utf-8');
+                finalStatus = 'error';
+            } else if (data.status.id > 2) {
+                // Execution finished (Success or Runtime Error)
+                const stdoutRaw = data.stdout ? Buffer.from(data.stdout, 'base64').toString('utf-8') : "";
+                stderr = data.stderr ? Buffer.from(data.stderr, 'base64').toString('utf-8') : "";
+
+                // Reuse validtion logic
+                const problem = PROBLEMS[problem_id] || PROBLEMS['two-sum'];
+
+                // ... extract score logic ...
+                let passedCount = 0;
+                const judgeLines = stdoutRaw.split('\n').filter((l: string) => l.startsWith('__JUDGE__ '));
+
+                // We need to reconstruct the "results" array to store in DB or just store the score/output
+                // Connect.md says: "Compute score, Update Supabase"
+
+                problem.testCases.forEach((tc: any, index: number) => {
+                    const searchStr = `__JUDGE__ Test Case ${index + 1}: `;
+                    const line = judgeLines.find((l: string) => l.includes(searchStr));
+                    if (line) {
+                        const actual = line.replace(searchStr, '').trim();
+                        const normalize = (s: string) => s.replace(/\s+/g, '');
+                        if (normalize(actual) === normalize(tc.expected)) passedCount++;
+                    }
+                });
+
+                score = parseFloat(((passedCount / problem.testCases.length) * 100).toFixed(2));
+                output = stdoutRaw; // Store full output or just user logs? Storing full for now.
+                finalStatus = 'completed'; // or 'success'
+            }
+
+            // Update Supabase
+            await supabase
+                .from('executions')
+                .update({
+                    status: finalStatus,
+                    stdout: output,
+                    stderr: stderr,
+                    score: score,
+                    // Can store structured results in a JSON column if schema has it, else just text
+                })
+                .eq('id', job.id);
+
+        } catch (e) {
+            console.error(`[POLL] Error processing job ${job.id}:`, e);
+        }
+    }
+
+}, 2000); // Poll every 2s
