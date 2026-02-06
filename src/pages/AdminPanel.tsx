@@ -6,7 +6,7 @@ import ReactFlow, {
     Controls, 
     ReactFlowProvider 
 } from 'reactflow';
-import 'reactflow/dist/style.css'; // 👈 Critical Import for Visual Canvas
+import 'reactflow/dist/style.css'; //  Critical Import for Visual Canvas
 
 import {
     Shield, RefreshCw, Play, Ban, Search,
