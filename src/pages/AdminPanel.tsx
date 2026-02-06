@@ -1,11 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
+import ReactFlow, { 
+    Background, 
+    Controls, 
+    ReactFlowProvider 
+} from 'reactflow';
+import 'reactflow/dist/style.css'; // 👈 Critical Import for Visual Canvas
+
 import {
     Shield, RefreshCw, Play, Ban, Search,
     Plus, Trash2, AlertTriangle, LogOut,
     Activity, Workflow, CheckCircle, CheckCircle2, Eye, X, FileJson, Cpu, Code, Trophy,
-    ListChecks, Clock, FastForward
+    ListChecks, Clock, FastForward, Settings, Save, Maximize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,27 +33,6 @@ interface Participant {
     tab_switches: number;
     created_at: string;
     updated_at: string;
-}
-
-interface Question {
-    id: string;
-    round_id: 'mcq' | 'coding';
-    title: string;
-    description: string;
-    options?: string[];
-    correct_answer?: string;
-    difficulty: string;
-    code_snippet?: string;
-    examples?: Array<{ input: string; output: string; explanation: string }>;
-    constraints?: string[];
-}
-
-interface FlowchartProblem {
-    id: string;
-    title: string;
-    description: string;
-    requirements: string[];
-    is_active: boolean;
 }
 
 interface InspectionData {
@@ -74,11 +60,38 @@ interface LeaderboardEntry {
     updated_at: string;
 }
 
+// --- SUB-COMPONENT: VISUAL FLOWCHART VIEWER (READ ONLY) ---
+const FlowchartViewer = ({ nodes, edges }: { nodes: any[], edges: any[] }) => {
+    return (
+        <div className="h-[400px] w-full border border-zinc-700 rounded-xl bg-zinc-900 overflow-hidden relative">
+            <ReactFlowProvider>
+                <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    fitView
+                    nodesDraggable={false} // 🔒 Lock: Dragging disabled
+                    nodesConnectable={false} // 🔒 Lock: Connections disabled
+                    elementsSelectable={true}
+                    zoomOnScroll={true}
+                    panOnDrag={true}
+                    attributionPosition="bottom-right"
+                >
+                    <Background color="#333" gap={16} />
+                    <Controls className="bg-zinc-800 border-zinc-700 fill-white" />
+                </ReactFlow>
+            </ReactFlowProvider>
+            <div className="absolute top-2 right-2 bg-black/60 px-2 py-1 rounded text-[10px] text-zinc-400 pointer-events-none border border-zinc-800">
+                Read-Only Mode
+            </div>
+        </div>
+    );
+};
+
 // --- INSPECTION MODAL ---
 function InspectionModal({ user, loading, data, onClose }: { user: Participant; loading: boolean; data: InspectionData | null; onClose: () => void }) {
     return (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-zinc-950 border border-zinc-800 w-full max-w-4xl h-[85vh] rounded-2xl shadow-2xl flex flex-col relative overflow-hidden">
+            <div className="bg-zinc-950 border border-zinc-800 w-full max-w-5xl h-[90vh] rounded-2xl shadow-2xl flex flex-col relative overflow-hidden">
                 <div className="p-6 border-b border-zinc-800 bg-zinc-900/50 flex justify-between items-center">
                     <div>
                         <h2 className="text-xl font-bold text-white flex items-center gap-2"><Activity className="w-5 h-5 text-blue-500" /> Inspection Mode</h2>
@@ -96,15 +109,25 @@ function InspectionModal({ user, loading, data, onClose }: { user: Participant; 
                                 <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800"><p className="text-xs text-zinc-500 uppercase font-bold">Tab Switches</p><p className="text-xl font-bold text-red-500">{user.tab_switches}</p></div>
                                 <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800"><p className="text-xs text-zinc-500 uppercase font-bold">Current Round</p><p className="text-xl font-bold text-blue-400 capitalize">{user.current_round_slug}</p></div>
                             </div>
+                            
                             <div className="space-y-4">
                                 <h3 className="text-lg font-bold text-white flex items-center gap-2 pb-2 border-b border-zinc-800"><Workflow className="w-5 h-5 text-yellow-500" /> Flowchart Submission</h3>
                                 {data?.flowchart ? (
-                                    <div className="bg-zinc-900/50 rounded-xl border border-zinc-800 p-6 space-y-6">
-                                        <div className="flex flex-col md:flex-row gap-6">
+                                    <div className="space-y-6">
+                                        {/* AI FEEDBACK SECTION */}
+                                        <div className="bg-zinc-900/50 rounded-xl border border-zinc-800 p-6 flex flex-col md:flex-row gap-6">
                                             <div className="flex-1 bg-black/40 p-4 rounded-lg border border-zinc-800"><p className="text-xs text-zinc-500 uppercase font-bold mb-2">AI Score</p><div className="text-4xl font-bold text-blue-400">{data.flowchart.ai_score}<span className="text-lg text-zinc-600">/100</span></div></div>
                                             <div className="flex-[2] bg-black/40 p-4 rounded-lg border border-zinc-800"><p className="text-xs text-zinc-500 uppercase font-bold mb-2 flex items-center gap-2"><Cpu className="w-3 h-3" /> AI Feedback</p><p className="text-zinc-300 text-sm leading-relaxed">{data.flowchart.ai_feedback || "No feedback generated."}</p></div>
                                         </div>
-                                        <div className="space-y-2"><p className="text-xs text-zinc-500 uppercase font-bold flex items-center gap-2"><FileJson className="w-3 h-3" /> Raw Structure</p><div className="bg-black p-4 rounded-lg border border-zinc-800 font-mono text-xs text-green-400 overflow-x-auto max-h-60"><pre>{JSON.stringify(data.flowchart.nodes, null, 2)}</pre></div></div>
+
+                                        {/* VISUAL FLOWCHART VIEWER (Canvas) */}
+                                        <div className="space-y-2">
+                                            <p className="text-xs text-zinc-500 uppercase font-bold flex items-center gap-2"><Maximize2 className="w-3 h-3" /> Visual Replica</p>
+                                            <FlowchartViewer 
+                                                nodes={Array.isArray(data.flowchart.nodes) ? data.flowchart.nodes : []} 
+                                                edges={Array.isArray(data.flowchart.edges) ? data.flowchart.edges : []} 
+                                            />
+                                        </div>
                                     </div>
                                 ) : (<div className="text-center p-8 bg-zinc-900/30 rounded-xl border border-dashed border-zinc-800 text-zinc-500">No Flowchart submission found.</div>)}
                             </div>
@@ -119,13 +142,16 @@ function InspectionModal({ user, loading, data, onClose }: { user: Participant; 
 // --- MAIN COMPONENT ---
 export default function AdminPanel() {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'monitor' | 'controls' | 'questions' | 'leaderboard'>('monitor');
+    const [activeTab, setActiveTab] = useState<'monitor' | 'controls' | 'questions' | 'leaderboard' | 'settings'>('monitor');
     const [participants, setParticipants] = useState<Participant[]>([]);
-    const [questions, setQuestions] = useState<Question[]>([]);
-    const [flowchartProblems, setFlowchartProblems] = useState<FlowchartProblem[]>([]);
+    const [questions, setQuestions] = useState<any[]>([]);
+    const [flowchartProblems, setFlowchartProblems] = useState<any[]>([]);
     const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
     const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+
+    // Game Config State
+    const [config, setConfig] = useState({ mcq: '15', flowchart: '30', coding: '45' });
 
     // Inspection State
     const [selectedUser, setSelectedUser] = useState<Participant | null>(null);
@@ -133,14 +159,14 @@ export default function AdminPanel() {
     const [loadingInspection, setLoadingInspection] = useState(false);
     const [questionsTab, setQuestionsTab] = useState<'mcq' | 'flowchart' | 'coding'>('mcq');
 
-    const [newQ, setNewQ] = useState({
-        round_id: 'mcq',
-        title: '',
-        description: '',
-        optionA: '', optionB: '', optionC: '', optionD: '',
-        correct: '',
-        difficulty: 'easy',
-        code_snippet: '',
+    const [newQ, setNewQ] = useState<any>({ 
+        round_id: 'mcq', 
+        title: '', 
+        description: '', 
+        optionA: '', optionB: '', optionC: '', optionD: '', 
+        correct: '', 
+        difficulty: 'easy', 
+        code_snippet: '', 
         example1_input: '', example1_output: '', example1_explanation: '',
         example2_input: '', example2_output: '', example2_explanation: '',
         constraint1: '', constraint2: '', constraint3: ''
@@ -163,20 +189,22 @@ export default function AdminPanel() {
         if (participants.length === 0) setLoading(true);
 
         try {
+            // Fetch Users
             const { data: users } = await supabase.from('exam_sessions').select('*').order('tab_switches', { ascending: false });
             if (users) {
                 const studentsOnly = users.filter(user => !ADMIN_EMAILS.includes(user.email));
                 setParticipants(studentsOnly);
             }
 
+            // Fetch Questions & Problems
             const { data: qData } = await supabase.from('questions').select('*').order('created_at', { ascending: false });
             if (qData) setQuestions(qData);
 
             const { data: fData } = await supabase.from('flowchart_problems').select('*').order('created_at', { ascending: false });
             if (fData) setFlowchartProblems(fData);
 
+            // Fetch Leaderboard
             const { data: lData } = await supabase.from('leaderboard').select('*');
-
             if (lData && users) {
                 const enhancedData = lData.map(entry => {
                     const user = users.find(u => u.user_id === entry.user_id);
@@ -184,15 +212,26 @@ export default function AdminPanel() {
                 });
 
                 enhancedData.sort((a, b) => {
-                    if (b.overall_score !== a.overall_score) {
-                        return b.overall_score - a.overall_score;
-                    }
+                    // Sort by Score (Desc)
+                    if (b.overall_score !== a.overall_score) return b.overall_score - a.overall_score;
+                    // Then by Time (Asc)
                     const timeA = a.total_time_seconds || Number.MAX_SAFE_INTEGER;
                     const timeB = b.total_time_seconds || Number.MAX_SAFE_INTEGER;
                     return timeA - timeB;
                 });
-
                 setLeaderboardData(enhancedData);
+            }
+
+            // Fetch Config
+            const { data: cData } = await supabase.from('game_config').select('*');
+            if (cData) {
+                const newConfig = { ...config };
+                cData.forEach((c: any) => {
+                    if (c.key === 'mcq_duration') newConfig.mcq = c.value;
+                    if (c.key === 'flowchart_duration') newConfig.flowchart = c.value;
+                    if (c.key === 'coding_duration') newConfig.coding = c.value;
+                });
+                setConfig(newConfig);
             }
 
         } catch (err) {
@@ -207,6 +246,7 @@ export default function AdminPanel() {
         const channel = supabase.channel('admin-dashboard')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_sessions' }, () => fetchData())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'leaderboard' }, () => fetchData())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'game_config' }, () => fetchData())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'questions' }, () => fetchData())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'flowchart_problems' }, () => fetchData())
             .subscribe();
@@ -226,7 +266,7 @@ export default function AdminPanel() {
     };
 
     const formatDuration = (seconds?: number) => {
-        if (!seconds) return "--";
+        if (typeof seconds !== 'number') return "--";
         const m = Math.floor(seconds / 60);
         const s = seconds % 60;
         return `${m}m ${s}s`;
@@ -242,11 +282,11 @@ export default function AdminPanel() {
         else { toast.success(`User status updated to: ${targetStatus}`); }
     };
 
-    // ✅ NEW: MOVE USER TO SPECIFIC ROUND (Unrestricted)
+    // ✅ FULL LIBERTY MOVE: Allows moving users anywhere at any time
     const moveUserToRound = async (userId: string, round: 'mcq' | 'flowchart' | 'coding') => {
-        if(!confirm(`⚠️ Move this user to ${round.toUpperCase()} Round?`)) return;
+        if(!confirm(`⚠️ FORCE MOVE: Send user to ${round.toUpperCase()}? This will override their current progress.`)) return;
         
-        // Optimistic
+        // Optimistic Update
         setParticipants(prev => prev.map(p => p.user_id === userId ? { ...p, current_round_slug: round } : p));
         
         const { error } = await supabase.from('exam_sessions')
@@ -255,6 +295,20 @@ export default function AdminPanel() {
         
         if(error) { toast.error("Move failed"); fetchData(); }
         else { toast.success(`Moved to ${round.toUpperCase()}`); }
+    };
+
+    // ✅ SAVE CONFIG: Updates time limits in DB
+    const saveSettings = async () => {
+        setLoading(true);
+        const updates = [
+            { key: 'mcq_duration', value: config.mcq },
+            { key: 'flowchart_duration', value: config.flowchart },
+            { key: 'coding_duration', value: config.coding }
+        ];
+        const { error } = await supabase.from('game_config').upsert(updates, { onConflict: 'key' });
+        setLoading(false);
+        if (error) toast.error("Failed to save settings");
+        else toast.success("Game Settings Updated!");
     };
 
     const activateFlowchartProblem = async (id: string) => {
@@ -313,7 +367,7 @@ export default function AdminPanel() {
         if (!newQ.title) return toast.error("Title required");
         const payload: any = { round_id: newQ.round_id, title: newQ.title, description: newQ.description, difficulty: newQ.difficulty };
         if (newQ.round_id === 'mcq') {
-            payload.options = [newQ.optionA, newQ.optionB, newQ.optionC, newQ.optionD].filter(o => o.trim());
+            payload.options = [newQ.optionA, newQ.optionB, newQ.optionC, newQ.optionD].filter((o: any) => o?.trim());
             payload.correct_answer = newQ.correct;
         } else if (newQ.round_id === 'coding') {
             payload.code_snippet = newQ.code_snippet;
@@ -321,7 +375,7 @@ export default function AdminPanel() {
             if (newQ.example1_input) examples.push({ input: newQ.example1_input, output: newQ.example1_output, explanation: newQ.example1_explanation });
             if (newQ.example2_input) examples.push({ input: newQ.example2_input, output: newQ.example2_output, explanation: newQ.example2_explanation });
             payload.examples = examples;
-            payload.constraints = [newQ.constraint1, newQ.constraint2, newQ.constraint3].filter(c => c.trim());
+            payload.constraints = [newQ.constraint1, newQ.constraint2, newQ.constraint3].filter((c: any) => c?.trim());
         }
         const { error } = await supabase.from('questions').insert(payload);
         if (!error) {
@@ -332,7 +386,7 @@ export default function AdminPanel() {
 
     const handleAddFlowchart = async () => {
         if (!newFlowchart.title) return toast.error("Title required");
-        const reqs = [newFlowchart.req1, newFlowchart.req2, newFlowchart.req3, newFlowchart.req4].filter(r => r.trim());
+        const reqs = [newFlowchart.req1, newFlowchart.req2, newFlowchart.req3, newFlowchart.req4].filter((r: any) => r?.trim());
         if (reqs.length === 0) return toast.error("Add requirements");
         const { error } = await supabase.from('flowchart_problems').insert({ title: newFlowchart.title, description: newFlowchart.description, requirements: reqs, is_active: false });
         if (!error) {
@@ -363,8 +417,8 @@ export default function AdminPanel() {
                     </div>
                     <div className="flex flex-col md:flex-row items-center gap-4">
                         <div className="flex gap-2 bg-black/50 p-1.5 rounded-xl border border-zinc-800">
-                            {['monitor', 'controls', 'questions', 'leaderboard'].map((tab) => (
-                                <button key={tab} onClick={() => setActiveTab(tab as any)} className={cn("px-6 py-2 rounded-lg text-sm font-bold transition-all capitalize tracking-wide", activeTab === tab ? "bg-red-700 text-white shadow-lg" : "text-zinc-400 hover:text-white hover:bg-zinc-800")}>
+                            {['monitor', 'controls', 'questions', 'leaderboard', 'settings'].map((tab) => (
+                                <button key={tab} onClick={() => setActiveTab(tab as any)} className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all capitalize tracking-wide", activeTab === tab ? "bg-red-700 text-white shadow-lg" : "text-zinc-400 hover:text-white hover:bg-zinc-800")}>
                                     {tab}
                                 </button>
                             ))}
@@ -418,7 +472,7 @@ export default function AdminPanel() {
                                             <td className="p-4 text-center"><span className={cn("font-mono text-lg font-bold", p.tab_switches > 0 ? "text-red-500" : "text-zinc-700")}>{p.tab_switches}</span></td>
                                             <td className="p-4 pr-6 flex justify-end items-center gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
                                                 
-                                                {/* ROUND JUMPERS (UNLOCKED) */}
+                                                {/* ROUND JUMPERS (UNLOCKED & COLORED) */}
                                                 <div className="flex bg-zinc-950 rounded-lg p-1 border border-zinc-800 mr-2">
                                                     <Button 
                                                         size="icon" 
@@ -463,6 +517,32 @@ export default function AdminPanel() {
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                )}
+
+                {/* ======================= SETTINGS TAB (NEW) ======================= */}
+                {activeTab === 'settings' && (
+                    <div className="max-w-xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        <div className="bg-zinc-900/80 border border-zinc-800 p-8 rounded-2xl shadow-xl">
+                            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2"><Settings className="w-6 h-6 text-red-500" /> Game Configuration</h2>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-sm font-bold text-zinc-400 mb-1 block">MCQ Duration (Minutes)</label>
+                                    <Input value={config.mcq} onChange={e => setConfig({ ...config, mcq: e.target.value })} className="bg-black border-zinc-700" type="number" />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-bold text-zinc-400 mb-1 block">Flowchart Duration (Minutes)</label>
+                                    <Input value={config.flowchart} onChange={e => setConfig({ ...config, flowchart: e.target.value })} className="bg-black border-zinc-700" type="number" />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-bold text-zinc-400 mb-1 block">Coding Duration (Minutes)</label>
+                                    <Input value={config.coding} onChange={e => setConfig({ ...config, coding: e.target.value })} className="bg-black border-zinc-700" type="number" />
+                                </div>
+                            </div>
+                            <Button onClick={saveSettings} disabled={loading} className="w-full mt-8 bg-red-600 hover:bg-red-500 text-white font-bold h-12">
+                                <Save className="w-4 h-4 mr-2" /> Save Configuration
+                            </Button>
                         </div>
                     </div>
                 )}
