@@ -45,36 +45,32 @@ app.use(bodyParser.json());
 // Apply rate limiter to all api routes
 app.use('/api/', limiter);
 
-// Ensure uploads/buckets directory exists
-const uploadDir = path.join(__dirname, 'uploads');
-const BUCKET_DIR = path.join(__dirname, 'documentation_bucket');
-
-async function ensureDirs() {
-    try {
-        await fs.promises.mkdir(uploadDir, { recursive: true });
-        await fs.promises.mkdir(BUCKET_DIR, { recursive: true });
-    } catch (e) {
-        console.error("Error creating directories:", e);
-    }
-}
-ensureDirs();
-
-// Helper to save to Local Bucket (Async)
+// Helper to save to Supabase Bucket (Async)
 async function saveToBucket(teamName: string, problemId: string, language: string, code: string) {
     try {
         // Sanitize team name for folder safety
         const safeTeamName = teamName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        const candidateFolder = path.join(BUCKET_DIR, safeTeamName);
-
-        await fs.promises.mkdir(candidateFolder, { recursive: true });
 
         const ext = language === 'python' ? 'py' : language === 'javascript' ? 'js' : 'txt';
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `${problemId}_${timestamp}.${ext}`;
-        const filePath = path.join(candidateFolder, filename);
+        const filename = `${safeTeamName}/${problemId}_${timestamp}.${ext}`;
 
-        await fs.promises.writeFile(filePath, code);
-        return filename;
+        const { data, error } = await supabase
+            .storage
+            .from('codelog')
+            .upload(filename, code, {
+                contentType: 'text/plain',
+                upsert: false
+            });
+
+        if (error) {
+            console.error("Supabase Storage Error:", error);
+            return "error_saving";
+        }
+
+        // Return the public URL or just the path if bucket is private (user said public)
+        return data.path;
+
     } catch (err) {
         console.error("Bucket Error:", err);
         return "error_saving";
@@ -467,10 +463,24 @@ app.post('/api/execute', async (req: express.Request, res: express.Response) => 
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log(`Using Judge0 URLs: ${JUDGE0_URLS.join(', ')}`);
-    console.log(`📁 Bucket: ${BUCKET_DIR}`);
 });
 app.get('/healthcheck', (req: express.Request, res: express.Response) => {
     res.status(200).json({ status: 'ok', judge0_urls: JUDGE0_URLS });
+});
+
+// LEADERBOARD ENDPOINT
+app.get('/api/leaderboard', async (req: express.Request, res: express.Response) => {
+    try {
+        const { data, error } = await supabase
+            .from('executions')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        res.json(data);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // STATUS ENDPOINT
@@ -567,6 +577,23 @@ setInterval(async () => {
                     // Can store structured results in a JSON column if schema has it, else just text
                 })
                 .eq('id', job.id);
+
+            // Update Leaderboard (Round 3)
+            if (job.user_id && job.user_id !== 'anonymous') {
+                const { data: existing } = await supabase.from('leaderboard').select('*').eq('user_id', job.user_id).single();
+                const r1 = existing?.round1_score || 0;
+                const r2 = existing?.round2_score || 0;
+                // If this is round 3. Currently /api/execute is used for Round 3 (Coding). 
+                // If used for other rounds, pass round info. Assuming Round 3 for now as per Context.
+                const newOverall = r1 + r2 + score;
+
+                await supabase.from('leaderboard').upsert({
+                    user_id: job.user_id,
+                    round3_score: score,
+                    overall_score: newOverall,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' });
+            }
 
         } catch (e) {
             console.error(`[POLL] Error processing job ${job.id}:`, e);

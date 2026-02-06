@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import {
     Shield, RefreshCw, Play, Ban, Search,
     Plus, Trash2, AlertTriangle, LogOut,
-    Activity, Workflow, CheckCircle, CheckCircle2, Eye, X, FileJson, Cpu, Code
+    Activity, Workflow, CheckCircle, CheckCircle2, Eye, X, FileJson, Cpu, Code, Trophy
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,7 +36,7 @@ interface Question {
     correct_answer?: string;
     difficulty: string;
     code_snippet?: string;
-    examples?: Array<{input: string; output: string; explanation: string}>;
+    examples?: Array<{ input: string; output: string; explanation: string }>;
     constraints?: string[];
 }
 
@@ -57,15 +57,26 @@ interface InspectionData {
         ai_feedback: string;
         created_at: string;
     } | null;
-    // Add MCQ/Coding submission types here later if needed
+}
+
+
+interface LeaderboardEntry {
+    id: string;
+    user_id: string;
+    round1_score: number;
+    round2_score: number;
+    round3_score: number;
+    overall_score: number;
+    updated_at: string;
 }
 
 export default function AdminPanel() {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'monitor' | 'controls' | 'questions'>('monitor');
+    const [activeTab, setActiveTab] = useState<'monitor' | 'controls' | 'questions' | 'leaderboard'>('monitor');
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [questions, setQuestions] = useState<Question[]>([]);
     const [flowchartProblems, setFlowchartProblems] = useState<FlowchartProblem[]>([]);
+    const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
     const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -121,6 +132,10 @@ export default function AdminPanel() {
             const { data: fData } = await supabase.from('flowchart_problems').select('*').order('created_at', { ascending: false });
             if (fData) setFlowchartProblems(fData);
 
+            // Leaderboard (Scores)
+            const { data: lData } = await supabase.from('leaderboard').select('*').order('overall_score', { ascending: false });
+            if (lData) setLeaderboardData(lData);
+
         } catch (err) {
             console.error("Fetch error:", err);
         } finally {
@@ -134,19 +149,20 @@ export default function AdminPanel() {
         // Realtime Listener
         const channel = supabase
             .channel('admin-dashboard')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'exam_sessions' }, (payload) => {
-                setParticipants((prev) =>
-                    prev.map((p) => p.user_id === payload.new.user_id ? { ...p, ...(payload.new as Participant) } : p)
-                        .sort((a, b) => b.tab_switches - a.tab_switches)
-                );
-            }
-            )
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'exam_sessions' }, (payload) => {
-                if (!ADMIN_EMAILS.includes(payload.new.email)) {
-                    setParticipants(prev => [(payload.new as Participant), ...prev]);
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_sessions' }, (payload) => {
+                fetchData(); // Simplest way to keep everything safely in sync
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'leaderboard' }, (payload) => {
+                // Update leaderboard state directly or refetch
+                if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                    setLeaderboardData(prev => {
+                        const newData = payload.new as LeaderboardEntry;
+                        const exists = prev.find(p => p.id === newData.id);
+                        let list = exists ? prev.map(p => p.id === newData.id ? newData : p) : [...prev, newData];
+                        return list.sort((a, b) => b.overall_score - a.overall_score);
+                    });
                 }
-            }
-            )
+            })
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
@@ -218,13 +234,13 @@ export default function AdminPanel() {
         if (!confirm("⚠️ START EXAM?")) return;
         setLoading(true);
         const toastId = toast.loading("Starting Round 1...");
-        
+
         const { data, error } = await supabase
             .from('exam_sessions')
             .update({ current_round_slug: 'mcq', status: 'active' })
             .eq('current_round_slug', 'waiting')
             .select();
-        
+
         if (error) {
             toast.error("Failed to start round", { id: toastId });
         } else {
@@ -239,13 +255,13 @@ export default function AdminPanel() {
         if (!confirm("⚠️ START ROUND 2 (FLOWCHART)?")) return;
         setLoading(true);
         const toastId = toast.loading("Starting Round 2...");
-        
+
         const { data, error } = await supabase
             .from('exam_sessions')
             .update({ current_round_slug: 'flowchart', status: 'active' })
             .eq('current_round_slug', 'mcq')
             .select();
-        
+
         if (error) {
             toast.error("Failed to start round", { id: toastId });
         } else {
@@ -260,13 +276,13 @@ export default function AdminPanel() {
         if (!confirm("⚠️ START ROUND 3 (CODING)?")) return;
         setLoading(true);
         const toastId = toast.loading("Starting Round 3...");
-        
+
         const { data, error } = await supabase
             .from('exam_sessions')
             .update({ current_round_slug: 'coding', status: 'active' })
             .eq('current_round_slug', 'flowchart')
             .select();
-        
+
         if (error) {
             toast.error("Failed to start round", { id: toastId });
         } else {
@@ -285,20 +301,20 @@ export default function AdminPanel() {
 
     const handleAddQuestion = async () => {
         if (!newQ.title) return toast.error("Title required");
-        
-        const payload: any = { 
-            round_id: newQ.round_id, 
-            title: newQ.title, 
-            description: newQ.description, 
-            difficulty: newQ.difficulty 
+
+        const payload: any = {
+            round_id: newQ.round_id,
+            title: newQ.title,
+            description: newQ.description,
+            difficulty: newQ.difficulty
         };
-        
+
         if (newQ.round_id === 'mcq') {
             payload.options = [newQ.optionA, newQ.optionB, newQ.optionC, newQ.optionD].filter(o => o.trim());
             payload.correct_answer = newQ.correct;
         } else if (newQ.round_id === 'coding') {
             payload.code_snippet = newQ.code_snippet;
-            
+
             // Build examples array
             const examples = [];
             if (newQ.example1_input && newQ.example1_output) {
@@ -316,18 +332,18 @@ export default function AdminPanel() {
                 });
             }
             payload.examples = examples;
-            
+
             // Build constraints array
             payload.constraints = [newQ.constraint1, newQ.constraint2, newQ.constraint3].filter(c => c.trim());
         }
-        
+
         const { error } = await supabase.from('questions').insert(payload);
-        if (!error) { 
-            toast.success("Question Added"); 
-            setNewQ({ 
+        if (!error) {
+            toast.success("Question Added");
+            setNewQ({
                 round_id: 'mcq',
-                title: '', 
-                description: '', 
+                title: '',
+                description: '',
                 optionA: '', optionB: '', optionC: '', optionD: '',
                 correct: '',
                 difficulty: 'easy',
@@ -335,14 +351,14 @@ export default function AdminPanel() {
                 example1_input: '', example1_output: '', example1_explanation: '',
                 example2_input: '', example2_output: '', example2_explanation: '',
                 constraint1: '', constraint2: '', constraint3: ''
-            }); 
-            fetchData(); 
+            });
+            fetchData();
         }
     };
 
     const handleAddFlowchart = async () => {
         if (!newFlowchart.title) return toast.error("Title required");
-        
+
         const requirements = [
             newFlowchart.req1,
             newFlowchart.req2,
@@ -402,7 +418,7 @@ export default function AdminPanel() {
                     </div>
                     <div className="flex flex-col md:flex-row items-center gap-4">
                         <div className="flex gap-2 bg-black/50 p-1.5 rounded-xl border border-zinc-800">
-                            {['monitor', 'controls', 'questions'].map((tab) => (
+                            {['monitor', 'controls', 'questions', 'leaderboard'].map((tab) => (
                                 <button key={tab} onClick={() => setActiveTab(tab as any)} className={cn("px-6 py-2 rounded-lg text-sm font-bold transition-all capitalize tracking-wide", activeTab === tab ? "bg-red-700 text-white shadow-lg" : "text-zinc-400 hover:text-white hover:bg-zinc-800")}>
                                     {tab}
                                 </button>
@@ -484,7 +500,7 @@ export default function AdminPanel() {
                             <div className="bg-zinc-900/80 border border-green-900/50 p-6 rounded-2xl relative overflow-hidden group hover:border-green-600/50 transition-colors">
                                 <h3 className="text-lg font-bold text-green-400 mb-2 flex items-center gap-2"><Play className="w-5 h-5" /> Start Round 1</h3>
                                 <p className="text-zinc-400 mb-2 text-xs">Moves everyone from <strong>Waiting Room</strong> to <strong>MCQ Round</strong>.</p>
-                                
+
                                 {/* Live Stats */}
                                 <div className="flex items-center gap-4 mb-4 text-xs">
                                     <div className="flex items-center gap-1.5">
@@ -498,7 +514,7 @@ export default function AdminPanel() {
                                         <span className="font-bold text-white">{participants.filter(p => p.current_round_slug === 'mcq').length}</span>
                                     </div>
                                 </div>
-                                
+
                                 <Button onClick={startExam} disabled={loading} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold h-10 text-sm">
                                     {loading ? "Processing..." : "START ROUND 1"}
                                 </Button>
@@ -508,7 +524,7 @@ export default function AdminPanel() {
                             <div className="bg-zinc-900/80 border border-yellow-900/50 p-6 rounded-2xl relative overflow-hidden group hover:border-yellow-600/50 transition-colors">
                                 <h3 className="text-lg font-bold text-yellow-400 mb-2 flex items-center gap-2"><Workflow className="w-5 h-5" /> Start Round 2</h3>
                                 <p className="text-zinc-400 mb-2 text-xs">Moves everyone from <strong>MCQ</strong> to <strong>Flowchart Round</strong>.</p>
-                                
+
                                 {/* Live Stats */}
                                 <div className="flex items-center gap-4 mb-4 text-xs">
                                     <div className="flex items-center gap-1.5">
@@ -522,7 +538,7 @@ export default function AdminPanel() {
                                         <span className="font-bold text-white">{participants.filter(p => p.current_round_slug === 'flowchart').length}</span>
                                     </div>
                                 </div>
-                                
+
                                 <Button onClick={startRound2} disabled={loading} className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold h-10 text-sm">
                                     {loading ? "Processing..." : "START ROUND 2"}
                                 </Button>
@@ -532,7 +548,7 @@ export default function AdminPanel() {
                             <div className="bg-zinc-900/80 border border-purple-900/50 p-6 rounded-2xl relative overflow-hidden group hover:border-purple-600/50 transition-colors">
                                 <h3 className="text-lg font-bold text-purple-400 mb-2 flex items-center gap-2"><Code className="w-5 h-5" /> Start Round 3</h3>
                                 <p className="text-zinc-400 mb-2 text-xs">Moves everyone from <strong>Flowchart</strong> to <strong>Coding Round</strong>.</p>
-                                
+
                                 {/* Live Stats */}
                                 <div className="flex items-center gap-4 mb-4 text-xs">
                                     <div className="flex items-center gap-1.5">
@@ -546,7 +562,7 @@ export default function AdminPanel() {
                                         <span className="font-bold text-white">{participants.filter(p => p.current_round_slug === 'coding').length}</span>
                                     </div>
                                 </div>
-                                
+
                                 <Button onClick={startRound3} disabled={loading} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold h-10 text-sm">
                                     {loading ? "Processing..." : "START ROUND 3"}
                                 </Button>
@@ -575,7 +591,7 @@ export default function AdminPanel() {
                                 </div>
                                 <Input placeholder="Title" className="bg-black border-zinc-700" value={newQ.title} onChange={e => setNewQ({ ...newQ, title: e.target.value })} />
                                 <Textarea placeholder="Description" className="bg-black border-zinc-700 min-h-[80px]" value={newQ.description} onChange={e => setNewQ({ ...newQ, description: e.target.value })} />
-                                
+
                                 {newQ.round_id === 'mcq' && (
                                     <div className="space-y-2 bg-zinc-950 p-3 rounded border border-zinc-800">
                                         <p className="text-xs font-bold text-zinc-500">OPTIONS</p>
@@ -583,30 +599,30 @@ export default function AdminPanel() {
                                         <Input placeholder="Correct Answer" className="h-8 bg-green-900/20 border-green-900 text-green-400" value={newQ.correct} onChange={e => setNewQ({ ...newQ, correct: e.target.value })} />
                                     </div>
                                 )}
-                                
+
                                 {newQ.round_id === 'coding' && (
                                     <div className="space-y-3 bg-zinc-950 p-4 rounded border border-zinc-800">
                                         <p className="text-xs font-bold text-purple-400">CODING PROBLEM DETAILS</p>
-                                        
+
                                         <div>
                                             <label className="text-xs text-zinc-500 mb-1 block">Code Snippet (Default Template)</label>
                                             <Textarea placeholder="def twoSum(nums, target):\n    # Write your code here\n    pass" className="bg-zinc-900 border-zinc-700 font-mono text-xs min-h-[100px]" value={newQ.code_snippet} onChange={e => setNewQ({ ...newQ, code_snippet: e.target.value })} />
                                         </div>
-                                        
+
                                         <div className="space-y-2">
                                             <p className="text-xs font-bold text-zinc-500">Example 1</p>
                                             <Input placeholder="Input: nums = [2,7,11,15], target = 9" className="h-8 bg-zinc-900 border-zinc-700 text-xs" value={newQ.example1_input} onChange={e => setNewQ({ ...newQ, example1_input: e.target.value })} />
                                             <Input placeholder="Output: [0,1]" className="h-8 bg-zinc-900 border-zinc-700 text-xs" value={newQ.example1_output} onChange={e => setNewQ({ ...newQ, example1_output: e.target.value })} />
                                             <Input placeholder="Explanation: Because nums[0] + nums[1] == 9, we return [0, 1]." className="h-8 bg-zinc-900 border-zinc-700 text-xs" value={newQ.example1_explanation} onChange={e => setNewQ({ ...newQ, example1_explanation: e.target.value })} />
                                         </div>
-                                        
+
                                         <div className="space-y-2">
                                             <p className="text-xs font-bold text-zinc-500">Example 2 (Optional)</p>
                                             <Input placeholder="Input" className="h-8 bg-zinc-900 border-zinc-700 text-xs" value={newQ.example2_input} onChange={e => setNewQ({ ...newQ, example2_input: e.target.value })} />
                                             <Input placeholder="Output" className="h-8 bg-zinc-900 border-zinc-700 text-xs" value={newQ.example2_output} onChange={e => setNewQ({ ...newQ, example2_output: e.target.value })} />
                                             <Input placeholder="Explanation" className="h-8 bg-zinc-900 border-zinc-700 text-xs" value={newQ.example2_explanation} onChange={e => setNewQ({ ...newQ, example2_explanation: e.target.value })} />
                                         </div>
-                                        
+
                                         <div className="space-y-2">
                                             <p className="text-xs font-bold text-zinc-500">Constraints</p>
                                             <Input placeholder="2 <= nums.length <= 10^4" className="h-8 bg-zinc-900 border-zinc-700 text-xs" value={newQ.constraint1} onChange={e => setNewQ({ ...newQ, constraint1: e.target.value })} />
@@ -615,11 +631,11 @@ export default function AdminPanel() {
                                         </div>
                                     </div>
                                 )}
-                                
+
                                 <Button onClick={handleAddQuestion} className="w-full bg-white hover:bg-zinc-200 text-black font-bold">Save Question</Button>
                             </div>
                         </div>
-                        
+
                         {/* Questions List Grid */}
                         <div className="grid md:grid-cols-2 gap-6">
                             {/* MCQ Questions */}
@@ -642,7 +658,7 @@ export default function AdminPanel() {
                                     )}
                                 </div>
                             </div>
-                            
+
                             {/* Coding Questions */}
                             <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-xl">
                                 <h4 className="text-sm font-bold text-purple-400 mb-3 flex items-center gap-2">
@@ -664,56 +680,56 @@ export default function AdminPanel() {
                                 </div>
                             </div>
                         </div>
-                        
+
                         {/* Flowchart Manager */}
                         <div className="bg-zinc-900 border border-yellow-900/30 p-6 rounded-2xl shadow-xl">
                             <h3 className="font-bold text-yellow-500 mb-4 flex items-center gap-2 text-lg"><Workflow className="w-5 h-5" /> Round 2: Flowchart Challenges</h3>
-                            
+
                             {/* Add Flowchart Form */}
                             <div className="mb-6 bg-zinc-950 border border-yellow-900/20 p-4 rounded-xl">
                                 <p className="text-xs font-bold text-yellow-400 mb-3">ADD NEW FLOWCHART PROBLEM</p>
                                 <div className="space-y-3">
-                                    <Input 
-                                        placeholder="Problem Title (e.g., Find Largest of 3 Numbers)" 
-                                        className="bg-zinc-900 border-zinc-700 text-sm" 
-                                        value={newFlowchart.title} 
-                                        onChange={e => setNewFlowchart({ ...newFlowchart, title: e.target.value })} 
+                                    <Input
+                                        placeholder="Problem Title (e.g., Find Largest of 3 Numbers)"
+                                        className="bg-zinc-900 border-zinc-700 text-sm"
+                                        value={newFlowchart.title}
+                                        onChange={e => setNewFlowchart({ ...newFlowchart, title: e.target.value })}
                                     />
-                                    <Textarea 
-                                        placeholder="Problem Description" 
-                                        className="bg-zinc-900 border-zinc-700 text-sm min-h-[60px]" 
-                                        value={newFlowchart.description} 
-                                        onChange={e => setNewFlowchart({ ...newFlowchart, description: e.target.value })} 
+                                    <Textarea
+                                        placeholder="Problem Description"
+                                        className="bg-zinc-900 border-zinc-700 text-sm min-h-[60px]"
+                                        value={newFlowchart.description}
+                                        onChange={e => setNewFlowchart({ ...newFlowchart, description: e.target.value })}
                                     />
                                     <div className="space-y-2">
                                         <p className="text-xs text-zinc-500">Requirements (at least 1)</p>
-                                        <Input 
-                                            placeholder="Requirement 1" 
-                                            className="h-8 bg-zinc-900 border-zinc-700 text-xs" 
-                                            value={newFlowchart.req1} 
-                                            onChange={e => setNewFlowchart({ ...newFlowchart, req1: e.target.value })} 
+                                        <Input
+                                            placeholder="Requirement 1"
+                                            className="h-8 bg-zinc-900 border-zinc-700 text-xs"
+                                            value={newFlowchart.req1}
+                                            onChange={e => setNewFlowchart({ ...newFlowchart, req1: e.target.value })}
                                         />
-                                        <Input 
-                                            placeholder="Requirement 2 (optional)" 
-                                            className="h-8 bg-zinc-900 border-zinc-700 text-xs" 
-                                            value={newFlowchart.req2} 
-                                            onChange={e => setNewFlowchart({ ...newFlowchart, req2: e.target.value })} 
+                                        <Input
+                                            placeholder="Requirement 2 (optional)"
+                                            className="h-8 bg-zinc-900 border-zinc-700 text-xs"
+                                            value={newFlowchart.req2}
+                                            onChange={e => setNewFlowchart({ ...newFlowchart, req2: e.target.value })}
                                         />
-                                        <Input 
-                                            placeholder="Requirement 3 (optional)" 
-                                            className="h-8 bg-zinc-900 border-zinc-700 text-xs" 
-                                            value={newFlowchart.req3} 
-                                            onChange={e => setNewFlowchart({ ...newFlowchart, req3: e.target.value })} 
+                                        <Input
+                                            placeholder="Requirement 3 (optional)"
+                                            className="h-8 bg-zinc-900 border-zinc-700 text-xs"
+                                            value={newFlowchart.req3}
+                                            onChange={e => setNewFlowchart({ ...newFlowchart, req3: e.target.value })}
                                         />
-                                        <Input 
-                                            placeholder="Requirement 4 (optional)" 
-                                            className="h-8 bg-zinc-900 border-zinc-700 text-xs" 
-                                            value={newFlowchart.req4} 
-                                            onChange={e => setNewFlowchart({ ...newFlowchart, req4: e.target.value })} 
+                                        <Input
+                                            placeholder="Requirement 4 (optional)"
+                                            className="h-8 bg-zinc-900 border-zinc-700 text-xs"
+                                            value={newFlowchart.req4}
+                                            onChange={e => setNewFlowchart({ ...newFlowchart, req4: e.target.value })}
                                         />
                                     </div>
-                                    <Button 
-                                        onClick={handleAddFlowchart} 
+                                    <Button
+                                        onClick={handleAddFlowchart}
                                         className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold h-9"
                                     >
                                         Add Flowchart Problem
@@ -740,18 +756,18 @@ export default function AdminPanel() {
                                                         <CheckCircle className="w-3 h-3" /> ACTIVE
                                                     </span>
                                                 ) : (
-                                                    <Button 
-                                                        size="sm" 
-                                                        onClick={() => activateFlowchartProblem(fp.id)} 
-                                                        variant="outline" 
+                                                    <Button
+                                                        size="sm"
+                                                        onClick={() => activateFlowchartProblem(fp.id)}
+                                                        variant="outline"
                                                         className="h-7 text-xs border-zinc-700"
                                                     >
                                                         Activate
                                                     </Button>
                                                 )}
-                                                <Button 
-                                                    size="icon" 
-                                                    variant="ghost" 
+                                                <Button
+                                                    size="icon"
+                                                    variant="ghost"
                                                     onClick={() => deleteQuestion(fp.id, 'flowchart_problems')}
                                                     className="h-7 w-7"
                                                 >
@@ -765,6 +781,49 @@ export default function AdminPanel() {
                                     <div className="text-center py-8 text-zinc-500 text-sm">No flowchart problems yet</div>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ======================= LEADERBOARD TAB ======================= */}
+                {activeTab === 'leaderboard' && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2"><Trophy className="w-6 h-6 text-yellow-500" /> Live Leaderboard</h2>
+                            <Button onClick={fetchData} variant="outline" size="sm" className="h-8 gap-2"><RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} /> Refresh</Button>
+                        </div>
+
+                        <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl overflow-hidden shadow-xl">
+                            <table className="w-full text-left text-sm text-zinc-400">
+                                <thead className="bg-black/40 uppercase text-[11px] font-bold text-zinc-500 border-b border-zinc-800 tracking-wider">
+                                    <tr>
+                                        <th className="p-4 pl-6">Participant ID</th>
+                                        <th className="p-4 text-center">R1 (MCQ)</th>
+                                        <th className="p-4 text-center">R2 (Flow)</th>
+                                        <th className="p-4 text-center">R3 (Code)</th>
+                                        <th className="p-4 text-right pr-6">Total Score</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-zinc-800/50">
+                                    {leaderboardData.map((entry, i) => (
+                                        <tr key={entry.id} className="hover:bg-white/5 transition-colors">
+                                            <td className="p-4 pl-6 font-medium text-white flex items-center gap-3">
+                                                <span className={cn("text-xs w-6 h-6 flex items-center justify-center rounded-full font-bold", i < 3 ? "bg-yellow-500 text-black" : "bg-zinc-800 text-zinc-500")}>{i + 1}</span>
+                                                <span className="font-mono text-xs text-zinc-400">{entry.user_id}</span>
+                                            </td>
+                                            <td className="p-4 text-center font-mono text-zinc-300">{entry.round1_score}</td>
+                                            <td className="p-4 text-center font-mono text-zinc-300">{entry.round2_score}</td>
+                                            <td className="p-4 text-center font-mono text-zinc-300">{entry.round3_score}</td>
+                                            <td className="p-4 text-right pr-6 font-mono font-bold text-green-400 text-lg">{entry.overall_score}</td>
+                                        </tr>
+                                    ))}
+                                    {leaderboardData.length === 0 && (
+                                        <tr>
+                                            <td colSpan={5} className="p-8 text-center text-zinc-500">No scores yet</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 )}
