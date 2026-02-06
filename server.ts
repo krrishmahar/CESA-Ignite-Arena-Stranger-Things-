@@ -14,7 +14,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3001;
+app.set('trust proxy', 1); // Enable proxy trust for Render/Heroku
+const PORT = process.env.PORT || 3001;
 
 // JUDGE0 CONFIG
 const JUDGE0_URLS = [
