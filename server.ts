@@ -444,7 +444,7 @@ app.post('/api/execute', async (req: express.Request, res: express.Response) => 
                     source_code: Buffer.from(wrappedCode).toString('base64'),
                     language_id: judge0Id,
                     stdin: Buffer.from("").toString('base64'),
-                    callback_url: `${process.env.PUBLIC_API_URL || 'http://localhost:3001'}/api/callback` // Optional: if we want webhook
+                    callback_url: `${process.env.API_BASE_URL || 'http://localhost:3001'}/api/callback` // Optional: if we want webhook
                 };
 
                 // Submit to Judge0 (with fallback)

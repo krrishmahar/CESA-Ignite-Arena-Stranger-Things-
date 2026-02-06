@@ -159,10 +159,13 @@ export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?:
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [submitStats, setSubmitStats] = useState<{ score: number; details: string; outcomes: string[] } | null>(null);
 
+  // const API_BASE_URL = 'http://localhost:3001';
+  const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
+
   const executeResult = async (probId: ProblemId, isSubmission: boolean) => {
     const sol = solutions[probId];
     try {
-      const response = await fetch('http://localhost:3001/api/execute', {
+      const response = await fetch(`${API_BASE_URL}/api/execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -193,7 +196,7 @@ export const CodingRound = ({ isSidebarExpanded = false }: { isSidebarExpanded?:
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         try {
-          const statusRes = await fetch(`http://localhost:3001/api/status/${jobId}`);
+          const statusRes = await fetch(`${API_BASE_URL}/api/status/${jobId}`);
           if (!statusRes.ok) continue;
 
           const statusData = await statusRes.json();
